@@ -7,7 +7,7 @@ pub const COLLECTION_NAME_REDOLOG: &str = "CoreTopology/redolog";
 pub const COLLECTION_NAME_TRACKING: &str = "CoreTopology/tracking";
 pub const INDEX_REDO_LOG_ID: &str = "redo_log_id";
 
-pub const NOM_COLLECTION_DOMAINES: &str = "CoreTopologie/domaines";
+pub const COLLECTION_DOMAINS: &str = "CoreTopologie/domains";
 pub const NOM_COLLECTION_MILLEGRILLES: &str = "CoreTopologie/millegrilles";
 pub const NOM_COLLECTION_MILLEGRILLES_ADRESSES: &str = "CoreTopologie/millegrillesAdresses";
 pub const NOM_COLLECTION_TOKENS: &str = "CoreTopologie/tokens";

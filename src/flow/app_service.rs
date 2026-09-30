@@ -70,6 +70,22 @@ impl ApplicationService {
 
         let self_clone = self.clone();
         let incoming_clone = incoming.clone();
+        join_set.spawn(async move {self_clone.process_volatiles_thread(incoming_clone).await});
+
+        let self_clone = self.clone();
+        let incoming_clone = incoming.clone();
+        join_set.spawn(async move {self_clone.process_presence_thread(incoming_clone).await});
+
+        let self_clone = self.clone();
+        let incoming_clone = incoming.clone();
+        join_set.spawn(async move {self_clone.process_filehosts_batch_thread(incoming_clone).await});
+
+        let self_clone = self.clone();
+        let incoming_clone = incoming.clone();
+        join_set.spawn(async move {self_clone.process_filecontroler_events_thread(incoming_clone).await});
+
+        let self_clone = self.clone();
+        let incoming_clone = incoming.clone();
         join_set.spawn(async move {self_clone.process_transaction_thread(incoming_clone).await});
 
         let self_clone = self.clone();
@@ -120,6 +136,114 @@ impl ApplicationService {
                     ).await {
                         error!("Request {:?} failed: {}", routing, e);
                     }
+                }
+                Err(e) => {
+                    error!("Error processing request message: {}", e);
+                }
+            }
+        }
+        debug!("process_requests_thread Closed");
+    }
+
+    // pub const QUEUE_VOLATILES: &str = "volatiles";
+    async fn process_volatiles_thread(&self, incoming: Arc<MessageInboundValidator>) {
+        let streamer = incoming.consume_named_queue(
+            format!("{}/{}", DOMAIN_NAME, QUEUE_VOLATILES).as_str(),
+        ).expect("Consumer streaming init failed");
+        tokio::pin!(streamer);
+        while let Some(result) = streamer.next().await {
+            match result {
+                Ok(message) => {
+                    let routing = message.message.routage.clone();
+                    todo!()
+                    // if let Err(e) = process_request(
+                    //     self.mongo.as_ref(),
+                    //     self.outbound.as_ref(),
+                    //     message
+                    // ).await {
+                    //     error!("Request {:?} failed: {}", routing, e);
+                    // }
+                }
+                Err(e) => {
+                    error!("Error processing request message: {}", e);
+                }
+            }
+        }
+        debug!("process_requests_thread Closed");
+    }
+
+    // pub const QUEUE_PRESENCE: &str = "presence";
+    async fn process_presence_thread(&self, incoming: Arc<MessageInboundValidator>) {
+        let streamer = incoming.consume_named_queue(
+            format!("{}/{}", DOMAIN_NAME, QUEUE_PRESENCE).as_str(),
+        ).expect("Consumer streaming init failed");
+        tokio::pin!(streamer);
+        while let Some(result) = streamer.next().await {
+            match result {
+                Ok(message) => {
+                    let routing = message.message.routage.clone();
+                    todo!()
+                    // if let Err(e) = process_request(
+                    //     self.mongo.as_ref(),
+                    //     self.outbound.as_ref(),
+                    //     message
+                    // ).await {
+                    //     error!("Request {:?} failed: {}", routing, e);
+                    // }
+                }
+                Err(e) => {
+                    error!("Error processing request message: {}", e);
+                }
+            }
+        }
+        debug!("process_requests_thread Closed");
+    }
+
+    // pub const QUEUE_FILEHOSTS_BATCH: &str = "filehostsBatch";
+    async fn process_filehosts_batch_thread(&self, incoming: Arc<MessageInboundValidator>) {
+        let streamer = incoming.consume_named_queue(
+            format!("{}/{}", DOMAIN_NAME, QUEUE_FILEHOSTS_BATCH).as_str(),
+        ).expect("Consumer streaming init failed");
+        tokio::pin!(streamer);
+        while let Some(result) = streamer.next().await {
+            match result {
+                Ok(message) => {
+                    let routing = message.message.routage.clone();
+                    todo!()
+                    // if let Err(e) = process_request(
+                    //     self.mongo.as_ref(),
+                    //     self.outbound.as_ref(),
+                    //     message
+                    // ).await {
+                    //     error!("Request {:?} failed: {}", routing, e);
+                    // }
+                }
+                Err(e) => {
+                    error!("Error processing request message: {}", e);
+                }
+            }
+        }
+        debug!("process_requests_thread Closed");
+    }
+
+    // pub const QUEUE_FILECONTROLER_EVENTS: &str = "filecontrolerEvents";
+    async fn process_filecontroler_events_thread(&self, incoming: Arc<MessageInboundValidator>) {
+        let streamer = incoming.consume_named_queue(
+            format!("{}/{}", DOMAIN_NAME, QUEUE_FILECONTROLER_EVENTS).as_str(),
+        ).expect("Consumer streaming init failed");
+        tokio::pin!(streamer);
+        while let Some(result) = streamer.next().await {
+            match result {
+                Ok(message) => {
+                    let routing = message.message.routage.clone();
+                    todo!()
+                    // if let Err(e) = process_request(
+                    //     self.mongo.as_ref(),
+                    //     self.outbound.as_ref(),
+                    //     message
+                    // ).await {
+                    //     error!("Request {:?} failed: {}", routing, e);
+                    // }
                 }
                 Err(e) => {
                     error!("Error processing request message: {}", e);
