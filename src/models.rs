@@ -350,3 +350,26 @@ pub struct TransactionSetFilehostInstance {
 pub struct TransactionFilehostSetDefault {
     pub filehost_id: String,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionDeleteDomain {
+    pub domain_name: String,
+}
+
+#[derive(Deserialize)]
+pub struct FilehostAddTransactionV2 {
+    pub instance_id: Option<String>,
+    pub tls_external: Option<String>,
+    pub url_external: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EventFilehost {
+    pub filehost_id: String,
+    pub event: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FilehostRestoreTransaction {
+    pub filehost_id: String,
+}

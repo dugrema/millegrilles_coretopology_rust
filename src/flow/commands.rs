@@ -1,3 +1,4 @@
+use millegrilles_common_rust::{bson, serde_json};
 use crate::external::mongo::*;
 use crate::external::mq::*;
 use crate::flow::filecontroler::check_primary_filecontroler;
@@ -13,11 +14,13 @@ use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
 use millegrilles_common_rust::mongodb::Cursor;
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
-use millegrilles_common_rust::tracing::{debug, error, info};
+use millegrilles_common_rust::serde_json::Value;
+use millegrilles_common_rust::tracing::{debug, error, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
-use millegrilles_common_rust::v3::{ConfigService, PkiService};
+use millegrilles_common_rust::v3::{ConfigService, PkiService, TransactionService};
+use millegrilles_common_rust::v3::impls::rabbitmq_consumer::DeliveryInfo;
 
 pub async fn process_command<M>(
     mongo: &M,
@@ -414,10 +417,10 @@ pub async fn process_transaction<M>(
     match action {
         TRANSACTION_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_DEFAULT => set_filehost_default(mongo, outbound, transaction, wrapper).await,
-        TRANSACTION_DELETE_DOMAIN => delete_domain(outbound, transaction, wrapper).await,
-        TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(outbound, transaction, wrapper).await,
-        TRANSACTION_FILEHOST_UPDATE => update_filehost(outbound, transaction, wrapper).await,
-        TRANSACTION_FILEHOST_DELETE => delete_filehost(outbound, transaction, wrapper).await,
+        TRANSACTION_DELETE_DOMAIN => delete_domain(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_FILEHOST_UPDATE => update_filehost(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_FILEHOST_DELETE => delete_filehost(mongo, outbound, transaction, wrapper).await,
         _ => {
             info!("Unknown action {} for process_transaction, skipping", action);
             Ok(())
@@ -499,34 +502,214 @@ async fn set_filehost_default<M>(
     outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
 
-async fn delete_domain(
+async fn delete_domain<M>(
+    mongo: &M,
     outbound: &MessageOutboundFacade,
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let transaction_value: TransactionDeleteDomain = wrapper.message.deserialize()?;
+
+    // Verifier que la valeur n'est pas la meme
+    let collection_domains =
+        mongo.get_collection_typed::<DomainRow>(COLLECTION_DOMAINS)?;
+    let filtre = doc!{CHAMP_DOMAINE: &transaction_value.domain_name};
+    if ! collection_domains.find_one(filtre).await?.is_some() {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, format!("Unknown domain: {}", transaction_value.domain_name).as_str())).await
+    }
+
+    // Process transaction
+    let delivery_info = wrapper.delivery_info.clone();
+    if let Err(e) = transaction.process_transaction(wrapper.into(), None).await {
+        error!("Error processing transaction {:?}", e);
+        return outbound.respond(delivery_info, ErrorMessage::err_code(500, "Error processing transaction")).await
+    }
+
+    // Emit filehost update event
+    let routage = RoutageMessageAction::builder(DOMAINE_TOPOLOGIE, EVENEMENT_FILEHOSTING_UPDATE, vec![Securite::L1Public])
+        .build();
+    outbound.emit_event(routage, ErrorMessage::ok()).await?;
+
+    // Respond
+    outbound.respond(delivery_info, ErrorMessage::ok()).await
+}
+
+#[derive(Serialize)]
+struct HostfileAddTransactionResponse {
+    ok: bool,
+    filehost_id: String
+}
+
+async fn add_filehost_v2<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    let transaction_value: FilehostAddTransactionV2 = wrapper.message.deserialize()?;
+    let message_id = wrapper.message.id.clone();
+    let certificat = wrapper.certificate.as_ref();
+
+    if certificat.verifier_roles_string(vec!["filecontroler".to_string()])? && certificat.verifier_exchanges(vec![Securite::L1Public])?{
+        if let Some(instance_id) = transaction_value.instance_id.as_ref() {
+            // This is a file controler trying to automatically add a local file host.
+            // Ensure that no file host exists (including deleted ones) for the instance_id that is being used.
+            let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+            let filtre = doc!{"instance_id": instance_id};
+            match collection.find_one(filtre).await? {
+                Some(filehost_row) => {
+                    // Exists, check if restore (when deleted) or conflict
+                    let response = check_restore_existing_filehost(mongo, transaction, outbound, message_id.as_str(), filehost_row).await?;
+                    return outbound.respond(wrapper.delivery_info, response).await
+                },
+                None => ()  // Ok, this is a new filehost
+            }
+        } else {
+            return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+        }
+    } else if certificat.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        if let Some(url_external) = transaction_value.url_external.as_ref() {
+            // Admin adding an external file host.
+            // Ensure no file host exists for this url.
+            let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+            let filtre = doc!{"url_external": url_external};
+            match collection.find_one(filtre).await? {
+                Some(filehost_row) => {
+                    // Exists, check if restore (when deleted) or conflict
+                    let response = check_restore_existing_filehost(mongo, transaction, outbound, message_id.as_str(), filehost_row).await?;
+                    return outbound.respond(wrapper.delivery_info, response).await
+                }
+                None => ()  // Ok, this is a new filehost
+            }
+        } else {
+            return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+        }
+    } else {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    // Process transaction
+    let delivery_info = wrapper.delivery_info.clone();
+    if let Err(e) = transaction.process_transaction(wrapper.into(), None).await {
+        error!("Error processing transaction {:?}", e);
+        return outbound.respond(delivery_info, ErrorMessage::err_code(500, "Error processing transaction")).await
+    }
+
+    // Check if we have a default filehost. If not, set this new filehost as default.
+    check_default_filehost(mongo, message_id.as_str()).await?;
+
+    // Load the new filehost, emit as event
+    let filtre = doc!{"filehost_id": &message_id};
+    let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+    match collection.find_one(filtre).await? {
+        Some(inner) => {
+            let routing = RoutageMessageAction::builder(DOMAINE_TOPOLOGIE, "filehostAdd", vec![Securite::L1Public])
+                .build();
+            let filehost_item: RequeteFilehostItem = inner.into();
+            outbound.emit_event(routing, filehost_item).await?;
+            emit_filehost_event(outbound, &message_id, EVENEMENT_FILEHOST_EVENTNEW).await?;  // Simple event
+        }
+        None => {
+            warn!("command_filehost_add Transaction successful but no item in database for {}", message_id);
+        }
+    }
+
+    let response = HostfileAddTransactionResponse {ok: true, filehost_id: message_id.to_string()};
+    outbound.respond(delivery_info, response).await
+}
+
+async fn check_restore_existing_filehost<M>(
+    mongo: &M,
+    transaction: &TopologyTransactionService,
+    outbound: &MessageOutboundFacade,
+    message_id: &str,
+    row: FilehostServerRow,
+) -> Result<Value, CommonError> where M: MongoDaoTyped {
+    // Check if deleted (this would be a restore)
+    if row.deleted {
+        info!("command_filehost_add Restoring filehost, rewriting add as update delete=false");
+        let filehost_update = FilehostRestoreTransaction { filehost_id: row.filehost_id.clone() };
+        transaction.process_value(DOMAINE_TOPOLOGIE, TRANSACTION_FILEHOST_RESTORE, serde_json::to_value(&filehost_update)?, None).await?;
+
+        check_default_filehost(mongo, row.filehost_id.as_str()).await?;
+
+        // Load the new filehost, emit as event
+        let filtre = doc! {"filehost_id": &row.filehost_id};
+        let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+        match collection.find_one(filtre).await? {
+            Some(inner) => {
+                let filehost_item: RequeteFilehostItem = inner.into();
+                // Emit new event
+                emit_filehost_event(outbound, filehost_item.filehost_id.as_str(), EVENEMENT_FILEHOST_EVENTNEW).await?;  // Simple event
+                // Also emit restore event
+                let routing = RoutageMessageAction::builder(
+                    DOMAINE_TOPOLOGIE,
+                    "filehostRestore",
+                    vec![Securite::L1Public]
+                ).build();
+                outbound.emit_event(routing, filehost_item).await?;
+            }
+            None => {
+                warn!("command_filehost_add Transaction successful but no item in database for {}", message_id);
+            }
+        }
+
+        let response = HostfileAddTransactionResponse {ok: true, filehost_id: row.filehost_id};
+        Ok(serde_json::to_value(response)?)
+    } else {
+        // Conflict, already exists and not deleted
+        Ok(serde_json::to_value(ErrorMessage::err_code(409, "Url exists"))?)
+    }
+}
+
+async fn check_default_filehost<M>(mongo: &M, filehost_id: &str) -> Result<(), CommonError>
+where M: MongoDaoTyped
+{
+    let filtre = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
+    let collection = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let result = collection.find_one(filtre).await?;
+    if result.is_none() {
+        info!("Initialize default filehost to {}", filehost_id);
+        // Initialize in a volatile way. User can override manually later.
+        let row = FilehostingCongurationRow {
+            name: FIELD_CONFIGURATION_FILEHOST_DEFAULT.into(),
+            value: filehost_id.to_string()
+        };
+        collection.insert_one(row).await?;
+    }
+    Ok(())
+}
+
+async fn emit_filehost_event(
+    outbound: &MessageOutboundFacade,
+    filehost_id: &str,
+    event_str: &str,
 ) -> Result<(), CommonError> {
+    let event = EventFilehost { filehost_id: filehost_id.to_string(), event: event_str.to_string() };
+    let routage = RoutageMessageAction::builder(DOMAINE_TOPOLOGIE, EVENEMENT_FILEHOST_EVENT, vec![Securite::L1Public])
+        .build();
+    outbound.emit_event(routage, &event).await?;
+    Ok(())
+}
+
+async fn update_filehost<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
     todo!()
 }
 
-async fn add_filehost_v2(
+async fn delete_filehost<M>(
+    mongo: &M,
     outbound: &MessageOutboundFacade,
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
-) -> Result<(), CommonError> {
-    todo!()
-}
-
-async fn update_filehost(
-    outbound: &MessageOutboundFacade,
-    transaction: &TopologyTransactionService,
-    wrapper: MessageValidated,
-) -> Result<(), CommonError> {
-    todo!()
-}
-
-async fn delete_filehost(
-    outbound: &MessageOutboundFacade,
-    transaction: &TopologyTransactionService,
-    wrapper: MessageValidated,
-) -> Result<(), CommonError> {
+) -> Result<(), CommonError> where M: MongoDaoTyped {
     todo!()
 }

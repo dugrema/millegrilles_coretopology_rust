@@ -10,7 +10,7 @@ use millegrilles_common_rust::v3::{ConfigService, FormatService, TransactionRout
 use std::sync::Arc;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::constantes::CHAMP_MODIFICATION;
-use millegrilles_common_rust::mongodb::options::{UpdateOneModel, WriteModel};
+use millegrilles_common_rust::mongodb::options::{DeleteOneModel, UpdateOneModel, WriteModel};
 use millegrilles_common_rust::tracing::warn;
 use crate::external::mq::*;
 use crate::models::*;
@@ -145,7 +145,23 @@ async fn delete_domain<M>(
     mongo: &M,
     wrapper: TransactionWrapper,
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
-    todo!()
+    let transaction_value: TransactionDeleteDomain = wrapper.message.deserialize()?;
+
+    let collection_domains =
+        mongo.get_collection_typed::<DomainRow>(COLLECTION_DOMAINS)?;
+    let filter = doc!{CHAMP_DOMAINE: &transaction_value.domain_name};
+
+    let delete_model_versions = WriteModel::DeleteOne(
+        DeleteOneModel::builder()
+            .namespace(collection_domains.namespace())
+            .filter(filter)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    // Ordered delete, domains get auto-added (business key is not a unique id)
+    aggregator.ordered = Some(vec![delete_model_versions]);
+
+    Ok(aggregator)
 }
 
 async fn add_filehost_v2<M>(

@@ -51,7 +51,7 @@ pub const TRANSACTION_FILEHOST_ADD: &str = "filehostAdd";
 pub const TRANSACTION_FILEHOST_ADD_V2: &str = "filehostAddV2";
 pub const TRANSACTION_FILEHOST_UPDATE: &str = "filehostUpdate";
 pub const TRANSACTION_FILEHOST_DELETE: &str = "filehostDelete";
-// pub const TRANSACTION_FILEHOST_RESTORE: &str = "filehostRestore";
+pub const TRANSACTION_FILEHOST_RESTORE: &str = "filehostRestore";
 pub const TRANSACTION_FILEHOST_DEFAULT: &str = "setDefaultFilehost";
 pub const TRANSACTION_DELETE_DOMAIN: &str = "deleteDomain";
 
@@ -64,6 +64,8 @@ pub const EVENEMENT_PRESENCE_INSTANCE_APPLICATIONS_V2: &str = "presenceInstanceA
 pub const EVENEMENT_RESET_VISITS_CLAIMS: &str = "resetVisitsClaims";
 pub const EVENEMENT_FILEHOST_TRANSFERSUPDATED: &str = "transfersUpdated";
 pub const EVENEMENT_FILEHOSTING_UPDATE: &str = "filehostingUpdate";
+pub const EVENEMENT_FILEHOST_EVENT: &str = "filehost";
+pub const EVENEMENT_FILEHOST_EVENTNEW: &str = "new";
 
 pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
     // Configure the queues and add to messaging service (will spawn consumer threads)
