@@ -8,8 +8,12 @@ use millegrilles_common_rust::v3::impls::transaction_service::TransactionService
 use millegrilles_common_rust::v3::models::{TransactionOperationAggregator, TransactionWrapper};
 use millegrilles_common_rust::v3::{ConfigService, FormatService, TransactionRouter, TransactionService};
 use std::sync::Arc;
+use millegrilles_common_rust::bson::doc;
+use millegrilles_common_rust::constantes::CHAMP_MODIFICATION;
+use millegrilles_common_rust::mongodb::options::{UpdateOneModel, WriteModel};
 use millegrilles_common_rust::tracing::warn;
-use crate::external::mq::{TRANSACTION_CONFIGURER_CONSIGNATION, TRANSACTION_DELETE_DOMAIN, TRANSACTION_FILEHOST_ADD, TRANSACTION_FILEHOST_ADD_V2, TRANSACTION_FILEHOST_DEFAULT, TRANSACTION_FILEHOST_DELETE, TRANSACTION_FILEHOST_UPDATE, TRANSACTION_MONITOR, TRANSACTION_SET_FICHIERS_PRIMAIRE, TRANSACTION_SET_FILEHOST_FOR_INSTANCE, TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE, TRANSACTION_SUPPRIMER_INSTANCE};
+use crate::external::mq::*;
+use crate::models::*;
 
 pub struct TopologyTransactionService {
     pub transaction: Arc<dyn TransactionService>,
@@ -57,7 +61,7 @@ impl TransactionRouter for TopologyTransactionRouter {
         wrapper: TransactionWrapper
     ) -> Result<TransactionOperationAggregator, CommonError> {
         match action.as_str() {
-            TRANSACTION_SET_FILEHOST_FOR_INSTANCE => todo!(),
+            TRANSACTION_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_DEFAULT => todo!(),
             TRANSACTION_DELETE_DOMAIN => todo!(),
             TRANSACTION_FILEHOST_ADD_V2 => todo!(),
@@ -77,42 +81,32 @@ impl TransactionRouter for TopologyTransactionRouter {
     }
 }
 
-async fn save_certificate(
+async fn set_filehost_for_instance(
     mongo: &dyn MongoDao,
     wrapper: TransactionWrapper,
-    ignore_duplicates: bool,
 ) -> Result<TransactionOperationAggregator, CommonError> {
-    todo!()
-    // let certificate: TransactionCertificat = wrapper.message.deserialize()?;
-    // 
-    // let mut enveloppe = EnveloppeCertificat::try_from(certificate.pem.as_str())?;
-    // if let Some(ca) = certificate.ca {
-    //     enveloppe.millegrille = Some(X509::from_pem(ca.as_bytes())?);
-    // }
-    // let row: CertificateRow = enveloppe.try_into()?;
-    // 
-    // let mut aggregator = TransactionOperationAggregator::new();
-    // if ignore_duplicates {
-    //     // Support for legacy systems with duplicates on restoration
-    //     let collection = mongo.get_collection(COLLECTION_NAME_CERTIFICATES)?;
-    //     let filtre_versions = doc! { PKI_DOCUMENT_CHAMP_FINGERPRINT: &row.fingerprint };
-    //     let ops = doc!{"$set": bson::serialize_to_bson(&row)?};
-    //     let update_model_versions = WriteModel::UpdateOne(
-    //         UpdateOneModel::builder()
-    //             .upsert(true)
-    //             .namespace(collection.namespace())
-    //             .filter(filtre_versions)
-    //             .update(ops)
-    //             .build()
-    //     );
-    //     aggregator.unordered = Some(vec![update_model_versions]);   // This really is just an insert
-    // } else {
-    //     // Default behavior, insert and raise Error on record duplication
-    //     let doc_row = bson::serialize_to_document(&row)?;
-    //     aggregator.batch_insertion(BatchInsertions::new(COLLECTION_NAME_CERTIFICATES, vec![doc_row]))?;
-    // }
-    // 
-    // Ok(aggregator)
+    let transaction_value: TransactionSetFilehostInstance = wrapper.message.deserialize()?;
+
+    let filter = doc! { CHAMP_INSTANCE_ID: &transaction_value.instance_id, "name": "filehost_id" };
+    let set_ops = doc! {"value": transaction_value.filehost_id.as_ref()};
+    let ops = doc! {
+        "$set": set_ops,
+        "$currentDate": {CHAMP_MODIFICATION: true}
+    };
+    let collection = mongo.get_collection(NOM_COLLECTION_INSTANCE_CONFIGURATION)?;
+
+    let update_model_versions = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .upsert(true)
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_versions]);
+    
+    Ok(aggregator)
 }
 
 fn obsolete(name: &str) -> Result<TransactionOperationAggregator,CommonError> {

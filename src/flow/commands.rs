@@ -13,7 +13,7 @@ use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
 use millegrilles_common_rust::mongodb::Cursor;
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
-use millegrilles_common_rust::tracing::info;
+use millegrilles_common_rust::tracing::{debug, error, info};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
@@ -412,7 +412,7 @@ pub async fn process_transaction<M>(
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in transaction")).await
     };
     match action {
-        TRANSACTION_SET_FILEHOST_FOR_INSTANCE => transaction_sample(mongo, pki, outbound, transaction, wrapper).await,
+        TRANSACTION_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_DEFAULT => todo!(),
         TRANSACTION_DELETE_DOMAIN => todo!(),
         TRANSACTION_FILEHOST_ADD_V2 => todo!(),
@@ -425,81 +425,34 @@ pub async fn process_transaction<M>(
     }
 }
 
-async fn transaction_sample<M>(
-    mongo: &M,
-    pki: &dyn PkiService,
+async fn set_filehost_for_instance(
     outbound: &MessageOutboundFacade,
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
-) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
-    // let transaction_value: CommandSaveCertificate = wrapper.message.deserialize()?;
-    //
-    // let ca = match transaction_value.ca.as_ref() {
-    //     Some(ca) => Some(ca.as_str()),
-    //     None => None
-    // };
-    //
-    // // Validate the certificate (current date)
-    // let pem_chain_str = transaction_value.chaine_pem.join("\n");
-    // let certificate = match pki.validate_pem(pem_chain_str.as_str(), ca.clone(), None) {
-    //     Ok(certificate) => certificate,
-    //     Err(_e) => {
-    //         // Assume the certificate is not currently valid. Get the not-before-date to confirm.
-    //         let enveloppe = match EnveloppeCertificat::try_from(pem_chain_str.as_str()) {
-    //             Ok(enveloppe) => enveloppe,
-    //             Err(e) => {
-    //                 info!("Invalid certificate: {:?}", e);
-    //                 return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(400, "Invalid certificate")).await
-    //             }
-    //         };
-    //         let not_valid_before = enveloppe.not_valid_before()?;
-    //         match pki.validate_pem(pem_chain_str.as_str(), ca, Some(&not_valid_before)) {
-    //             Ok(certificate) => certificate,
-    //             Err(e) => {
-    //                 info!("Invalid certificate: {:?}", e);
-    //                 return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(400, "Invalid certificate")).await
-    //             }
-    //         }
-    //     }
-    // };
-    //
-    // // Check if certificate already exists
-    // let fingerprint = match certificate.fingerprint() {
-    //     Ok(fingerprint) => fingerprint,
-    //     Err(e) => {
-    //         info!("Error getting fingerprint of certificate: {:?}", e);
-    //         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(500, "Error getting fingerprint")).await
-    //     }
-    // };
-    //
-    // // Do an existing query, ideally this will only hit the index
-    // let filter = doc!{ PKI_DOCUMENT_CHAMP_FINGERPRINT: &fingerprint };
-    // let collection = mongo.get_collection(COLLECTION_NAME_CERTIFICATES)?;
-    // if let Some(_row) = collection
-    //     .find_one(filter)
-    //     .projection(doc!{PKI_DOCUMENT_CHAMP_FINGERPRINT: true})
-    //     .hint(Hint::Name(PKI_DOCUMENT_CHAMP_FINGERPRINT.to_string()))
-    //     .await?
-    // {
-    //     // The certificate has already been received and processed successfully - respond with OK
-    //     return outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
-    // }
-    //
-    // // Run transaction updates
-    // let delivery_info = wrapper.delivery_info.clone();
-    // //if let Err(e) = transaction.process_transaction(wrapper.into(), None).await {
-    // let transaction_value = TransactionCertificat { pem: pem_chain_str, ca: transaction_value.ca };
-    // if let Err(e) = transaction.process_value(
-    //     DOMAIN_NAME,
-    //     TRANSACTION_ACTION_NEW_CERTIFICATE,
-    //     serde_json::to_value(transaction_value)?,
-    //     None
-    // ).await {
-    //     info!("Error saving certificate: {:?}", e);
-    //     return outbound.respond(delivery_info, ErrorMessage::err_code(500, "Error saving certificate")).await
-    // }
-    //
-    // // Success
-    // outbound.respond(delivery_info, ErrorMessage::ok()).await
+) -> Result<(), CommonError> {
+    // Verifier autorisation
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    // Validate command structure
+    let _transaction_value: TransactionSetFilehostInstance = wrapper.message.deserialize()?;
+
+    // Process transaction
+    let delivery_info = wrapper.delivery_info.clone();
+    if let Err(e) = transaction.process_transaction(wrapper.into(), None).await {
+        error!("Error processing transaction {:?}", e);
+        return outbound.respond(delivery_info, ErrorMessage::err_code(500, "Error processing transaction")).await
+    }
+
+    // Emit filehost update event
+    let routage = RoutageMessageAction::builder(
+        DOMAINE_TOPOLOGIE,
+        EVENEMENT_FILEHOSTING_UPDATE,
+        vec![Securite::L1Public]
+    ).build();
+    outbound.emit_event(routage, ErrorMessage::ok()).await?;
+
+    // Respond OK
+    outbound.respond(delivery_info, ErrorMessage::ok()).await
 }

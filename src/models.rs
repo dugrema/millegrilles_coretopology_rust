@@ -339,3 +339,9 @@ pub struct EventFilehostUsage {
     pub date: DateTime<Utc>,
     pub fuuid: Option<FileStorageInfo>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TransactionSetFilehostInstance {
+    pub instance_id: String,
+    pub filehost_id: Option<String>,
+}
