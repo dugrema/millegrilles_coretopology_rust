@@ -3,6 +3,7 @@ mod external;
 mod flow;
 mod state;
 mod models;
+mod fiche;
 
 use clap::Parser;
 use clap_derive::Parser;

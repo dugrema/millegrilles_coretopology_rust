@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use millegrilles_common_rust::chrono::{DateTime, Utc};
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::mongo_serde::option_chrono_04_datetime;
-use millegrilles_common_rust::chrono::serde::ts_seconds_option;
+use millegrilles_common_rust::chrono::serde::{ts_seconds, ts_seconds_option};
+use millegrilles_common_rust::mongo_serde::map_opt_chrono_datetime_as_bson_datetime;
+use millegrilles_common_rust::serde_json::Value;
 
 #[derive(Serialize, Deserialize)]
 pub struct DomainRow {
@@ -90,4 +92,137 @@ pub struct ServerInstanceConfigurationRow {
     pub instance_id: String,
     pub name: String,
     pub value: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FilehostingCongurationRow {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RowFilehostFuuid {
+    pub fuuid: String,
+    #[serde(default, with="option_chrono_04_datetime")]
+    pub last_claim_date: Option<DateTime<Utc>>,
+    #[serde(default, with="map_opt_chrono_datetime_as_bson_datetime")]
+    pub filehost: Option<HashMap<String, Option<DateTime<Utc>>>>,
+}
+
+#[derive(Serialize)]
+pub struct FuuidVisitResponseItem {
+    pub fuuid: String,
+    /// Epoch seconds
+    pub visits: HashMap<String, i64>,
+}
+
+impl From<RowFilehostFuuid> for FuuidVisitResponseItem {
+    fn from(row_filehost_fuuid: RowFilehostFuuid) -> Self {
+
+        let mut visits = HashMap::new();
+        if let Some(filehost) = row_filehost_fuuid.filehost {
+            for (key, value) in filehost {
+                if let Some(value) = value {
+                    visits.insert(key, value.timestamp());
+                }
+            }
+        }
+
+        Self {
+            fuuid: row_filehost_fuuid.fuuid,
+            visits,
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostInfo {
+    pub hostname: String,
+    pub ip_addresses: Vec<String>,
+    pub ports: HashMap<String, u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartitionUsageItem {
+    pub mountpoint: String,
+    pub free: u64,
+    pub used: u64,
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryInfo {
+    pub total: u64,
+    pub available: u64,
+    pub percent: f64,
+    pub used: u64,
+    pub free: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwapInfo {
+    pub total: u64,
+    pub used: u64,
+    pub free: u64,
+    pub percent: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkInfo {
+    pub bytes_sent: u64,
+    pub bytes_recv: u64,
+    pub packets_sent: u64,
+    pub packets_recv: u64,
+    pub errin: u64,
+    pub errout: u64,
+    pub dropin: u64,
+    pub dropout: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskIOInfo {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+    pub read_count: u64,
+    pub write_count: u64,
+    pub read_time: f64,
+    pub write_time: f64,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertissuerState {
+    #[serde(default, with="ts_seconds_option")]
+    pub not_before: Option<DateTime<Utc>>,
+    #[serde(default, with="ts_seconds_option")]
+    pub not_after: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemState {
+    pub host: Option<HostInfo>,
+    pub disk: Vec<PartitionUsageItem>,
+    pub load_average: Vec<f64>,
+    pub memory: MemoryInfo,
+    pub swap: SwapInfo,
+    pub cpu_count: i32,
+    pub cpu_usage_percent: f64,
+    pub network: NetworkInfo,
+    pub disk_io: Option<DiskIOInfo>,
+    pub uptime_seconds: f64,
+    pub system_temperature: Option<Value>,
+    pub system_fans: Option<Value>,
+    pub system_battery: Option<Value>,
+    pub apc: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManagerStatusV2 {
+    pub instance_id: String,
+    pub system_state: SystemState,
+    pub securite: String,
+    pub supprime: bool,
+    pub timestamp: DateTime<Utc>,
+    pub certissuer: Option<CertissuerState>,
 }

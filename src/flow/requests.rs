@@ -12,11 +12,15 @@ use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFaca
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::tokio_stream::StreamExt;
+use millegrilles_common_rust::v3::{ChiffrageService, ConfigService};
+use crate::fiche::generer_contenu_fiche_publique;
 use crate::models::*;
 
 pub async fn process_request<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
+    config: &dyn ConfigService,
+    chiffrage: &dyn ChiffrageService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where
     M: MongoDaoTyped,
@@ -27,13 +31,13 @@ pub async fn process_request<M>(
     };
     match action {
         REQUEST_DOMAIN_LIST => request_domain_list(mongo, outbound, wrapper).await,
-        REQUEST_SERVER_INSTANCES_V2 => request_deployed_userapps_v2(mongo, outbound, wrapper).await,
+        REQUEST_SERVER_INSTANCES_V2 => request_server_instances(mongo, outbound, wrapper).await,
         REQUEST_SERVER_INSTANCE_CONFIGURATION => request_server_configuration(mongo, outbound, wrapper).await,
         REQUETE_GET_CLEID_BACKUP_DOMAINE => request_get_domain_backup_keyid(mongo, outbound, wrapper).await,
         REQUETE_CONFIGURATION_FILEHOSTS => request_filehost_configuration(mongo, outbound, wrapper).await,
         REQUEST_FILEHOSTS_FOR_FUUIDS => request_filehosts_for_fuuid(mongo, outbound, wrapper).await,
-        REQUETE_USERAPPS_DEPLOYEES_V2 => request_deployed_userapps(mongo, outbound, wrapper).await,
-        REQUETE_FICHE_MILLEGRILLE => request_millegrille_fiche(mongo, outbound, wrapper).await,
+        REQUETE_USERAPPS_DEPLOYEES_V2 => request_deployed_userapps_v2(mongo, outbound, wrapper).await,
+        REQUETE_FICHE_MILLEGRILLE => request_millegrille_fiche(mongo, config, chiffrage, outbound, wrapper).await,
         REQUETE_GET_FILEHOSTS => request_filehosts(mongo, outbound, wrapper).await,
         REQUETE_GET_FILECONTROLERS => request_filecontrolers(mongo, outbound, wrapper).await,
         REQUETE_GET_FILEHOST_FOR_INSTANCE => request_filehost_for_instance(mongo, outbound, wrapper).await,
@@ -245,36 +249,132 @@ async fn request_get_domain_backup_keyid<M>(
     outbound.respond(wrapper.delivery_info, response).await
 }
 
+#[derive(Serialize)]
+struct ResponseConfigurationFilehosts {
+    ok: bool,
+    configuration: HashMap<String, String>,
+}
+
 async fn request_filehost_configuration<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    if !wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let collection_config = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let mut curseur = collection_config.find(doc!{}).await?;
+
+    let mut configuration = HashMap::new();
+    while let Some(row) =curseur.next().await {
+        let row = row?;
+        configuration.insert(row.name, row.value);
+    }
+
+    let response = ResponseConfigurationFilehosts { ok: true, configuration };
+    outbound.respond(wrapper.delivery_info, response).await
 }
+
+#[derive(Deserialize)]
+struct RequestFilehostsForFuuids { fuuids: Vec<String> }
+
+#[derive(Serialize)]
+struct ResponseFilehostsForFuuids { fuuids: Vec<FuuidVisitResponseItem> }
 
 async fn request_filehosts_for_fuuid<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    if wrapper.certificate.verifier_exchanges(vec!(Securite::L3Protege))? {
+        // Ok
+    } else {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let request: RequestFilehostsForFuuids = wrapper.message.deserialize()?;
+    let collection =
+        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let filtre = doc!{"fuuid": {"$in": &request.fuuids}};
+    let mut cursor = collection.find(filtre).await?;
+    let mut response_list = Vec::new();
+    while let Some(row) = cursor.next().await {
+        let row = row?;
+        if row.filehost.is_some() {
+            let result: FuuidVisitResponseItem = row.into();
+            response_list.push(result);
+        }
+    }
+
+    let response = ResponseFilehostsForFuuids { fuuids: response_list };
+    outbound.respond(wrapper.delivery_info, response).await
 }
 
-async fn request_deployed_userapps<M>(
+#[derive(Clone, Deserialize)]
+struct MessageInstanceId {
+    instance_id: Option<String>
+}
+
+#[derive(Serialize)]
+struct ResponseServerInstancesV2 {
+    ok: bool,
+    results: Vec<ManagerStatusV2>,
+}
+
+
+async fn request_server_instances<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    let certificate = wrapper.certificate.as_ref();
+    if certificate.verifier_exchanges(vec!(Securite::L3Protege))? {
+        // Ok
+    } else if certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        // Ok
+    } else {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let message_instance_id: MessageInstanceId = wrapper.message.deserialize()?;
+    let filtre = match message_instance_id.instance_id.as_ref() {
+        Some(inner) => doc!{"instance_id": inner},
+        None => doc!{}
+    };
+    let collection = mongo.get_collection_typed::<ManagerStatusV2>(NOM_COLLECTION_INSTANCE_STATUS_V2)?;
+    let mut results = vec![];
+    let mut cursor = collection.find(filtre).await?;
+    while let Some(row) = cursor.next().await {
+        results.push(row?);
+    }
+
+    let response = ResponseServerInstancesV2 {ok: true, results};
+    outbound.respond(wrapper.delivery_info, response).await
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RequeteFicheMillegrille {
+    pub idmg: Option<String>,
 }
 
 async fn request_millegrille_fiche<M>(
     mongo: &M,
+    config: &dyn ConfigService,
+    chiffrage: &dyn ChiffrageService,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    let requete: RequeteFicheMillegrille = wrapper.message.deserialize()?;
+    let idmg = config.get_configuration_pki().get_enveloppe_privee().enveloppe_pub.idmg()?;
+    if requete.idmg.is_some() && requete.idmg.as_ref() != Some(&idmg) {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(400, "Only local millegrille is supported")).await
+    }
+
+    // Todo: repondre avec message sous forme de commande, Action=fichePublique
+    let response = generer_contenu_fiche_publique(mongo, config, chiffrage).await?;
+    outbound.respond(wrapper.delivery_info, response).await
 }
 
 async fn request_filehosts<M>(
