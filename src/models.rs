@@ -325,3 +325,17 @@ pub struct FilehostTransfer {
     #[serde(default, with="option_chrono_04_datetime")]
     pub job_picked_up: Option<DateTime<Utc>>,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct FileStorageInfo {
+    pub count: i64,
+    pub size: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct EventFilehostUsage {
+    pub filehost_id: String,
+    #[serde(with="ts_seconds")]
+    pub date: DateTime<Utc>,
+    pub fuuid: Option<FileStorageInfo>,
+}
