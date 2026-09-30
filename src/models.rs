@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use millegrilles_common_rust::chrono::{DateTime, Utc};
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
+use millegrilles_common_rust::bson::serde_helpers::datetime::FromChrono04DateTime;
 use millegrilles_common_rust::mongo_serde::option_chrono_04_datetime;
 use millegrilles_common_rust::chrono::serde::{ts_seconds, ts_seconds_option};
 use millegrilles_common_rust::mongo_serde::map_opt_chrono_datetime_as_bson_datetime;
@@ -225,4 +226,75 @@ pub struct ManagerStatusV2 {
     pub supprime: bool,
     pub timestamp: DateTime<Utc>,
     pub certissuer: Option<CertissuerState>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileUsageMongo {
+    // Note: using f64 rather than usize/u64 because of random bug loading large values with mongo client 2.8.1
+    pub count: Option<f64>,
+    pub size: Option<f64>,
+}
+
+impl Into<FileUsage> for FileUsageMongo {
+    fn into(self) -> FileUsage {
+        FileUsage {
+            count: Some(self.count.unwrap_or(0f64) as usize),
+            size: Some(self.size.unwrap_or(0f64) as usize),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct FilehostServerRow {
+    pub filehost_id: String,
+    pub instance_id: Option<String>,
+    pub url_internal: Option<String>,
+    pub url_external: Option<String>,
+    pub tls_external: Option<String>,
+    pub deleted: bool,
+    pub sync_active: bool,
+    #[serde(with = "FromChrono04DateTime")]
+    pub created: DateTime<Utc>,
+    #[serde(with = "FromChrono04DateTime")]
+    pub modified: DateTime<Utc>,
+    pub fuuid: Option<FileUsageMongo>,  // Workaround in f64 to handle mapping issue, NOT SERIALIZABLE
+}
+
+impl Into<RequeteFilehostItem> for FilehostServerRow {
+    fn into(self) -> RequeteFilehostItem {
+        RequeteFilehostItem {
+            filehost_id: self.filehost_id,
+            instance_id: self.instance_id,
+            url_internal: self.url_internal,
+            url_external: self.url_external,
+            tls_external: self.tls_external,
+            deleted: self.deleted,
+            sync_active: self.sync_active,
+            created: self.created,
+            modified: self.modified,
+            fuuid: match self.fuuid {Some (inner) => Some(inner.into()), None => None},
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileUsage {
+    pub count: Option<usize>,
+    pub size: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RequeteFilehostItem {
+    pub filehost_id: String,
+    pub instance_id: Option<String>,
+    pub url_internal: Option<String>,
+    pub url_external: Option<String>,
+    pub tls_external: Option<String>,
+    pub deleted: bool,
+    pub sync_active: bool,
+    #[serde(with = "ts_seconds")]
+    pub created: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub modified: DateTime<Utc>,
+    pub fuuid: Option<FileUsage>,
 }

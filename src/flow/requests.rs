@@ -377,12 +377,40 @@ async fn request_millegrille_fiche<M>(
     outbound.respond(wrapper.delivery_info, response).await
 }
 
+#[derive(Deserialize)]
+struct RequestFilehostList {
+    filehost_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ResponseFilehostList {
+    ok: bool,
+    list: Vec<RequeteFilehostItem>,
+}
+
 async fn request_filehosts<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    let requete: RequestFilehostList = wrapper.message.deserialize()?;
+    let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+
+    let filtre = match requete.filehost_id {
+        Some(inner) => doc!{"filehost_id": inner},
+        None => doc!{"deleted": false}
+    };
+
+    let mut cursor = collection.find(filtre).await?;
+    let mut list = Vec::new();
+    while cursor.advance().await? {
+        let row = cursor.deserialize_current()?;
+        let item: RequeteFilehostItem = row.into();
+        list.push(item);
+    }
+
+    let response = ResponseFilehostList { ok: true, list };
+    outbound.respond(wrapper.delivery_info, response).await
 }
 
 async fn request_filecontrolers<M>(
