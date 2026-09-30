@@ -9,6 +9,7 @@ use millegrilles_common_rust::v3::models::{TransactionOperationAggregator, Trans
 use millegrilles_common_rust::v3::{ConfigService, FormatService, TransactionRouter, TransactionService};
 use std::sync::Arc;
 use millegrilles_common_rust::bson::doc;
+use millegrilles_common_rust::chrono::Utc;
 use millegrilles_common_rust::constantes::CHAMP_MODIFICATION;
 use millegrilles_common_rust::mongodb::options::{DeleteOneModel, UpdateOneModel, WriteModel};
 use millegrilles_common_rust::tracing::warn;
@@ -168,7 +169,44 @@ async fn add_filehost_v2<M>(
     mongo: &M,
     wrapper: TransactionWrapper,
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
-    todo!()
+    let transaction_value: FilehostAddTransactionV2 = wrapper.message.deserialize()?;
+    let transaction_id = &wrapper.message.id.as_str();
+
+    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let now = Utc::now();
+
+    let set_ops = doc! {
+        "instance_id": transaction_value.instance_id,
+        "url_external": transaction_value.url_external,
+        "tls_external": transaction_value.tls_external,
+    };
+    let set_on_insert = doc! {
+        "deleted": false,
+        "sync_active": true,
+        "created": now.clone(),
+        "fuuid": None::<&str>,
+    };
+
+    let ops = doc! {
+        "$set": set_ops,
+        "$setOnInsert": set_on_insert,
+        "$currentDate": {"modified": true},
+    };
+
+    let filter = doc! {"filehost_id": &transaction_id};
+
+    let update_model_versions = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .upsert(true)
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_versions]);
+
+    Ok(aggregator)
 }
 
 async fn update_filehost<M>(
