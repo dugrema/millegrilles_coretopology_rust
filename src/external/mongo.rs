@@ -12,9 +12,9 @@ pub const COLLECTION_CONFIGURED_APPLICATIONS_V2: &str = "CoreTopologie/instances
 pub const NOM_COLLECTION_FILEHOSTINGCONFIGURATION: &str = "CoreTopologie/filehostingConfiguration";
 
 
-pub const NOM_COLLECTION_MILLEGRILLES: &str = "CoreTopologie/millegrilles";
-pub const NOM_COLLECTION_MILLEGRILLES_ADRESSES: &str = "CoreTopologie/millegrillesAdresses";
-pub const NOM_COLLECTION_TOKENS: &str = "CoreTopologie/tokens";
+// pub const NOM_COLLECTION_MILLEGRILLES: &str = "CoreTopologie/millegrilles";
+// pub const NOM_COLLECTION_MILLEGRILLES_ADRESSES: &str = "CoreTopologie/millegrillesAdresses";
+// pub const NOM_COLLECTION_TOKENS: &str = "CoreTopologie/tokens";
 pub const NOM_COLLECTION_FILEHOSTS: &str = "CoreTopologie/filehosts";
 pub const NOM_COLLECTION_FILECONTROLERS: &str = "CoreTopologie/filecontrolers";
 pub const NOM_COLLECTION_FILEHOSTING_FUUIDS: &str = "CoreTopologie/filehostingFuuids";

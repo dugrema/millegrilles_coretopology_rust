@@ -1,29 +1,20 @@
-use crate::constants::*;
+use crate::external::mongo::*;
 use crate::models::*;
 use millegrilles_common_rust::bson::doc;
-use millegrilles_common_rust::certificats::{ValidateurX509, VerificateurPermissions};
 use millegrilles_common_rust::chrono::Utc;
-use millegrilles_common_rust::constantes::{CHAMP_CREATION, CHAMP_MODIFICATION, COMMANDE_RELAIWEB_GET, DOMAINE_RELAIWEB, SECURITE_2_PRIVE, Securite};
+use millegrilles_common_rust::constantes::{CHAMP_MODIFICATION, SECURITE_2_PRIVE, Securite};
 use millegrilles_common_rust::error::Error;
 use millegrilles_common_rust::fiche_systeme::{ApplicationsV2, FichePublique, InformationApplicationInstance, InformationInstance};
-use millegrilles_common_rust::generateur_messages::{GenerateurMessages, RoutageMessageAction};
-use millegrilles_common_rust::millegrilles_cryptographie::chiffrage_cles::CleChiffrageHandler;
-use millegrilles_common_rust::millegrilles_cryptographie::messages_structs::{MessageMilleGrillesBufferDefault, MessageMilleGrillesOwned, MessageValidable};
-use millegrilles_common_rust::mongo_dao::{convertir_to_bson, MongoDao, MongoDaoTyped};
-use millegrilles_common_rust::mongodb::options::UpdateOptions;
-use millegrilles_common_rust::recepteur_messages::TypeMessage;
-use millegrilles_common_rust::reqwest::Url;
-use millegrilles_common_rust::serde_json::json;
-use millegrilles_common_rust::{millegrilles_cryptographie, serde_json};
-use std::collections::HashMap;
-use std::str::from_utf8;
-use std::time::Duration;
-use millegrilles_common_rust::tracing::{debug, error};
+use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
+use millegrilles_common_rust::serde_json;
+use millegrilles_common_rust::tracing::debug;
 use millegrilles_common_rust::v3::{ChiffrageService, ConfigService};
-use crate::external::mongo::{COLLECTION_CONFIGURED_APPLICATIONS_V2, NOM_COLLECTION_INSTANCE_STATUS_V2};
+use std::collections::HashMap;
+use std::time::Duration;
 
 pub async fn generer_contenu_fiche_publique<M>(mongo: &M, config: &dyn ConfigService, chiffrage: &dyn ChiffrageService) -> Result<FichePublique, Error>
-where M: MongoDaoTyped
+where
+    M: MongoDaoTyped,
 {
     // Extraire chaines pem de certificats de chiffrage
     let chiffrage_enveloppes = chiffrage.get_encryption_publickeys();

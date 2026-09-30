@@ -51,7 +51,7 @@ pub const TRANSACTION_FILEHOST_ADD: &str = "filehostAdd";
 pub const TRANSACTION_FILEHOST_ADD_V2: &str = "filehostAddV2";
 pub const TRANSACTION_FILEHOST_UPDATE: &str = "filehostUpdate";
 pub const TRANSACTION_FILEHOST_DELETE: &str = "filehostDelete";
-pub const TRANSACTION_FILEHOST_RESTORE: &str = "filehostRestore";
+// pub const TRANSACTION_FILEHOST_RESTORE: &str = "filehostRestore";
 pub const TRANSACTION_FILEHOST_DEFAULT: &str = "setDefaultFilehost";
 pub const TRANSACTION_DELETE_DOMAIN: &str = "deleteDomain";
 

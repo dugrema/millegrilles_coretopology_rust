@@ -56,7 +56,7 @@ async fn event_presence_domain(
     if let Some(reclame_fuuids) = event.reclame_fuuids {
         set_doc.insert("reclame_fuuids", reclame_fuuids);
     }
-    let mut ops = doc! {
+    let ops = doc! {
         "$set": set_doc,
         "$setOnInsert": {
             "domaine": domain,

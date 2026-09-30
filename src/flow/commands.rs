@@ -1,35 +1,31 @@
 use crate::external::mongo::*;
 use crate::external::mq::*;
+use crate::flow::filecontroler::check_primary_filecontroler;
 use crate::flow::transactions::TopologyTransactionService;
+use crate::models::*;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::certificats::VerificateurPermissions;
+use millegrilles_common_rust::chrono::serde::ts_seconds;
 use millegrilles_common_rust::chrono::{DateTime, Duration, Utc};
-use millegrilles_common_rust::common_messages::DemandeSignature;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
-use millegrilles_common_rust::millegrilles_cryptographie::x509::EnveloppeCertificat;
-use millegrilles_common_rust::mongo_dao::{MongoDao, MongoDaoTyped};
-use millegrilles_common_rust::mongodb::options::Hint;
-use millegrilles_common_rust::serde_json;
-use millegrilles_common_rust::tracing::{info, warn};
-use millegrilles_common_rust::v3::{ConfigService, PkiService};
+use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
+use millegrilles_common_rust::mongodb::Cursor;
+use millegrilles_common_rust::serde::{Deserialize, Serialize};
+use millegrilles_common_rust::tracing::info;
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
-use millegrilles_common_rust::serde::{Serialize, Deserialize};
-use millegrilles_common_rust::chrono::serde::{ts_seconds, ts_seconds_option};
-use millegrilles_common_rust::mongodb::Cursor;
-use crate::constants::DOMAIN_NAME;
-use crate::flow::filecontroler::check_primary_filecontroler;
-use crate::models::*;
+use millegrilles_common_rust::v3::{ConfigService, PkiService};
 
 pub async fn process_command<M>(
     mongo: &M,
-    config: &dyn ConfigService,
     outbound: &MessageOutboundFacade,
-    wrapper: MessageValidated
-) -> Result<(), CommonError> where M: MongoDaoTyped {
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where
+    M: MongoDaoTyped,
+{
     let action = match wrapper.get_routing_action() {
         Some(action) => action,
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in command")).await
@@ -107,6 +103,7 @@ async fn claim_filehost_visits_for_fuuids<M>(
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
+
     todo!()
 }
 
@@ -415,7 +412,7 @@ pub async fn process_transaction<M>(
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in transaction")).await
     };
     match action {
-        TRANSACTION_SET_FILEHOST_FOR_INSTANCE => todo!(),
+        TRANSACTION_SET_FILEHOST_FOR_INSTANCE => transaction_sample(mongo, pki, outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_DEFAULT => todo!(),
         TRANSACTION_DELETE_DOMAIN => todo!(),
         TRANSACTION_FILEHOST_ADD_V2 => todo!(),
@@ -428,7 +425,7 @@ pub async fn process_transaction<M>(
     }
 }
 
-async fn save_certificate<M>(
+async fn transaction_sample<M>(
     mongo: &M,
     pki: &dyn PkiService,
     outbound: &MessageOutboundFacade,

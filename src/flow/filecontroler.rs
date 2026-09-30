@@ -1,21 +1,20 @@
-use std::collections::HashSet;
+use crate::external::mongo::*;
+use crate::external::mq::*;
+use crate::models::*;
 use millegrilles_common_rust::bson;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::certificats::VerificateurPermissions;
 use millegrilles_common_rust::chrono::Utc;
 use millegrilles_common_rust::constantes::*;
-use millegrilles_common_rust::mongo_dao::{MongoDao, MongoDaoTyped};
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
-use millegrilles_common_rust::mongodb::ClientSession;
-use millegrilles_common_rust::tracing::{debug, error, info, warn};
+use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
+use millegrilles_common_rust::serde::{Deserialize, Serialize};
+use millegrilles_common_rust::tracing::{debug, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
-use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::v3::models::ErrorMessage;
-use crate::external::mongo::{FIELD_CONFIGURATION_FILECONTROLER_PRIMARY, NOM_COLLECTION_FILEHOSTINGCONFIGURATION, NOM_COLLECTION_FILEHOSTING_FUUIDS, NOM_COLLECTION_FILEHOSTING_TRANSFERS, NOM_COLLECTION_FILEHOSTING_VISITS, NOM_COLLECTION_FILEHOSTS};
-use crate::external::mq::*;
-use crate::models::{EventFilehostUsage, FilehostingCongurationRow, FilehostingVisitRow, RowFilehostFuuid};
+use std::collections::HashSet;
 
 pub async fn process_filecontroler_events<M>(
     mongo: &M,
@@ -27,7 +26,7 @@ pub async fn process_filecontroler_events<M>(
         None => return Err(CommonError::Str("No action provided in event message"))
     };
     match action {
-        EVENEMENT_FILEHOST_USAGE => filehost_usage(mongo, outbound, wrapper).await,
+        EVENEMENT_FILEHOST_USAGE => filehost_usage(mongo, wrapper).await,
         EVENEMENT_FILEHOST_NEWFUUID => filehost_newfuuid(mongo, outbound, wrapper).await,
         _ => {
             info!("Unknown action {} for process_command, skipping", action);
@@ -39,7 +38,6 @@ pub async fn process_filecontroler_events<M>(
 
 async fn filehost_usage<M>(
     mongo: &M,
-    outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     if ! wrapper.certificate.verifier_roles_string(vec!["filecontroler".to_string()])? {
@@ -47,7 +45,7 @@ async fn filehost_usage<M>(
         return Ok(())
     }
 
-    let commande: EventFilehostUsage = wrapper.message.deserialize()?;;
+    let commande: EventFilehostUsage = wrapper.message.deserialize()?;
     let filtre = doc! {"filehost_id": &commande.filehost_id};
     let ops = doc!{
         "$set": {
@@ -199,12 +197,12 @@ async fn process_transfers<M>(
         }
     }
 
-    emit_filehost_transfersupdated_event(mongo, outbound).await?;
+    emit_filehost_transfersupdated_event(outbound).await?;
 
     Ok(())
 }
 
-pub async fn emit_filehost_transfersupdated_event<M>(middleware: &M, outbound: &MessageOutboundFacade) -> Result<(), CommonError> where M: MongoDaoTyped {
+async fn emit_filehost_transfersupdated_event(outbound: &MessageOutboundFacade) -> Result<(), CommonError> {
     let event = ErrorMessage::ok();
 
     let routage = RoutageMessageAction::builder(DOMAINE_TOPOLOGIE, EVENEMENT_FILEHOST_TRANSFERSUPDATED, vec![Securite::L1Public])

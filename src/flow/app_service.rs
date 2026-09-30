@@ -163,7 +163,6 @@ impl ApplicationService {
                     let routing = message.message.routage.clone();
                     if let Err(e) = process_command(
                         self.mongo.as_ref(),
-                        self.config.as_ref(),
                         self.outbound.as_ref(),
                         message
                     ).await {
@@ -210,7 +209,6 @@ impl ApplicationService {
                     let routing = message.message.routage.clone();
                     if let Err(e) = process_command(
                         self.mongo.as_ref(),
-                        self.config.as_ref(),
                         self.outbound.as_ref(),
                         message
                     ).await {
