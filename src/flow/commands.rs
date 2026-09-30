@@ -1,7 +1,8 @@
+use std::collections::{HashMap, HashSet};
 use millegrilles_common_rust::{bson, serde_json};
 use crate::external::mongo::*;
 use crate::external::mq::*;
-use crate::flow::filecontroler::check_primary_filecontroler;
+use crate::flow::filecontroler::{add_missing_file_transfers, check_primary_filecontroler, entretien_transfert_fichiers};
 use crate::flow::transactions::TopologyTransactionService;
 use crate::models::*;
 use millegrilles_common_rust::bson::doc;
@@ -12,9 +13,10 @@ use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
-use millegrilles_common_rust::mongodb::Cursor;
+use millegrilles_common_rust::mongodb::{ClientSession, Cursor};
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
 use millegrilles_common_rust::serde_json::Value;
+use millegrilles_common_rust::tokio_stream::StreamExt;
 use millegrilles_common_rust::tracing::{debug, error, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
@@ -102,13 +104,115 @@ async fn set_domain_backup_keyid<M>(
     outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
 }
 
+#[derive(Deserialize)]
+struct RequeteGetVisitesFuuids {
+    fuuids: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct ResponseGetVisitesFuuids {
+    pub ok: bool,
+    pub visits: Vec<FuuidVisitResponseItem>,
+    pub unknown: Vec<String>,
+    pub done: Option<bool>
+}
+
 async fn claim_filehost_visits_for_fuuids<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if ! wrapper.certificate.verifier_exchanges(vec![Securite::L3Protege])? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
 
-    todo!()
+    let estampille_date = wrapper.message.estampille.clone();
+    let requete: RequeteGetVisitesFuuids = wrapper.message.deserialize()?;
+
+    let mut fuuids_set = HashSet::new();
+    fuuids_set.extend(requete.fuuids.iter());
+    // let mut response_fuuids: HashMap<String, RowFuuidVisitResponse> = HashMap::new();
+    let mut response_fuuids: Vec<FuuidVisitResponseItem> = Vec::new();
+    let mut new_claims_fuuids: Vec<RowFilehostFuuid> = Vec::new();
+
+    let filtre = doc! {"fuuid": {"$in": &requete.fuuids}};
+    let collection = mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let mut curseur = collection.find(filtre).await?;
+    while let Some(row) = curseur.next().await {
+        let row = row?;
+
+        // Keep as new claim if claim date is null. Triggers the transfer when appropriate
+        if row.last_claim_date.is_none() {
+            new_claims_fuuids.push(row.clone());
+        }
+
+        fuuids_set.remove(&row.fuuid);
+        response_fuuids.push(row.into());
+    }
+
+    // Dedupe fuuids
+    let mut fuuids_requis = HashSet::new();
+    for f in &requete.fuuids {
+        fuuids_requis.insert(f);
+    }
+
+    // Save in the claims aggregation table
+    {
+        let now = Utc::now();
+        let mut batch = Vec::new();
+        let extensions = wrapper.certificate.extensions()?;
+        let domains = extensions.domaines;
+        if ! fuuids_requis.is_empty() {
+            for fuuid in &fuuids_requis {
+                batch.push(doc! {"fuuid": *fuuid, "claim_date": &now, "domains": &domains})
+            }
+            let collection_agg_claim = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_CLAIMS)?;
+            collection_agg_claim.insert_many(batch).await?;
+        }
+    }
+
+    // Conserver les reclamations.
+    let collection_claims = mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let filtre_reclamations = doc!{ "fuuid": {"$in": &requete.fuuids} };
+    let ops_reclamations = doc! {"$currentDate": {FIELD_LAST_CLAIM_DATE: true}};
+    let update_result = collection_claims.update_many(filtre_reclamations.clone(), ops_reclamations).await?;
+    if update_result.matched_count as usize != fuuids_requis.len() {
+        info!("Mismatch updates {} et claims {}. Inserer nouveaux claims.", requete.fuuids.len(), update_result.matched_count);
+        let mut curseur = collection_claims
+            .find(filtre_reclamations)
+            .projection(doc!{"fuuid": 1})
+            .await?;
+        while curseur.advance().await? {
+            let row = curseur.deserialize_current()?;
+            fuuids_requis.remove(&row.fuuid);
+        }
+
+        if ! fuuids_requis.is_empty() {
+            let mut rows = Vec::new();
+            for f in fuuids_requis {
+                debug!("Ajouter nouveau fuuid reclame {}", f);
+                let row = RowFilehostFuuid { fuuid: f.to_owned(), last_claim_date: Some(estampille_date.to_owned()), filehost: Some(HashMap::new()) };
+                rows.push(row);
+            }
+            let collection_insert_claims =
+                mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+            collection_insert_claims.insert_many(rows).await?;
+        }
+    }
+
+    let response = ResponseGetVisitesFuuids {
+        ok: true,
+        visits: response_fuuids,
+        unknown: Vec::from_iter(fuuids_set.into_iter().map(|f|f.to_string())),
+        done: None,  // Not batching
+    };
+
+    // Mettre a jour tous les transferts de fichier
+    let mut session = mongo.get_session().await?;
+    session.start_transaction().await?;
+    add_missing_file_transfers(mongo, outbound, &mut session, new_claims_fuuids).await?;
+
+    outbound.respond(wrapper.delivery_info, response).await
 }
 
 async fn filehost_reset_visits_claims<M>(
@@ -153,10 +257,9 @@ async fn filehost_reset_transfers<M>(
     collection_transfers.update_many(filtre, ops).await?;
 
     // Reverifie chaque transfert, enleve ceux qui ne s'appliquent plus et cree les nouveaux
-    todo!()
-    // entretien_transfert_fichiers(middleware).await?;
-    //
-    // outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+    entretien_transfert_fichiers(mongo, outbound).await?;
+
+    outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
 }
 
 #[derive(Deserialize)]
