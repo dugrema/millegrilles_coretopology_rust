@@ -10,10 +10,15 @@ les ports de redis (6379), MQ (5673) et MongoDB (27017).
 <pre>
 BACKUP_PATH=/home/mathieu/tas/dev/millegrilles/dev1/var/backup/domains
 CAFILE=/home/mathieu/tas/dev/millegrilles/dev1/etc/millegrille.pem
-KEYFILE=/home/mathieu/tas/dev/millegrilles/dev1/secrets/corepki.pem
+KEYFILE=/home/mathieu/tas/dev/millegrilles/dev1/secrets/coretopology.pem
 MG_MONGO_HOST=localhost
 MG_MQ_HOST=localhost
 MG_REDIS_PASSWORD_FILE=/home/mathieu/tas/dev/millegrilles/dev1/secrets/redis.txt
 MG_REDIS_URL=rediss://client_rust@localhost:6379#insecure
-RUST_LOG=warn,millegrilles_corepki_rust=debug,millegrilles_common_rust=debug
+RUST_LOG=warn,millegrilles_coretopology_rust=debug,millegrilles_common_rust=debug
+DEV=1
 </pre>
+
+## Command line parameters
+
+run --package millegrilles_coretopology_rust --bin millegrilles_corepki_rust -- --restore --capath /path/to/ca.pem --noresume
