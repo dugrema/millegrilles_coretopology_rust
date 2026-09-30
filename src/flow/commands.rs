@@ -3,7 +3,7 @@ use crate::external::mq::*;
 use crate::flow::transactions::TopologyTransactionService;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::certificats::VerificateurPermissions;
-use millegrilles_common_rust::chrono::Utc;
+use millegrilles_common_rust::chrono::{DateTime, Duration, Utc};
 use millegrilles_common_rust::common_messages::DemandeSignature;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
@@ -18,7 +18,10 @@ use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
+use millegrilles_common_rust::chrono::serde::{ts_seconds, ts_seconds_option};
+use millegrilles_common_rust::mongodb::Cursor;
 use crate::constants::DOMAIN_NAME;
+use crate::flow::filecontroler::check_primary_filecontroler;
 use crate::models::*;
 
 pub async fn process_command<M>(
@@ -38,8 +41,8 @@ pub async fn process_command<M>(
         COMMANDE_FILEHOST_RESET_TRANSFERS => filehost_reset_transfers(mongo, outbound, wrapper).await,
         COMMANDE_BACKUP_SET_DOMAIN_VERSION => set_domain_backup_version(mongo, outbound, wrapper).await,
         COMMAND_DOMAIN_CLAIM_FILES => domain_claim_files(mongo, outbound, wrapper).await,
-        COMMANDE_FILE_VISIT => todo!(),  //domain_claim_files(mongo, outbound, wrapper).await,
-        COMMANDE_FILEHOST_BATCH_TRANSFERS => todo!(),  // domain_claim_files(mongo, outbound, wrapper).await,
+        COMMANDE_FILE_VISIT => file_visit(mongo, outbound, wrapper).await,
+        COMMANDE_FILEHOST_BATCH_TRANSFERS => filehost_batch_transfers(mongo, outbound, wrapper).await,
         _ => {
             info!("Unknown action {} for process_command, skipping", action);
             Ok(())
@@ -237,6 +240,167 @@ async fn domain_claim_files<M>(
     outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
 }
 
+#[derive(Deserialize)]
+struct CommandFileVisit {
+    filehost_id: String,
+    #[serde(with="ts_seconds")]
+    visit_time: DateTime<Utc>,
+    fuuids: Vec<String>,
+    done: Option<bool>,
+}
+
+async fn file_visit<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    let instance_id = wrapper.certificate.get_common_name()?;
+
+    if ! wrapper.certificate.verifier_roles_string(vec!["filecontroler".to_string()])? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let commande: CommandFileVisit = wrapper.message.deserialize()?;
+
+    let mut batch = Vec::new();
+    let filehost_id = commande.filehost_id.as_str();
+    for fuuid in commande.fuuids {
+        batch.push(FilehostingVisitRow {
+            fuuid,
+            filehost_id: filehost_id.to_string(),
+            visit_time: commande.visit_time
+        });
+    }
+    if ! batch.is_empty() {
+        let collection_visits = mongo.get_collection_typed::<FilehostingVisitRow>(NOM_COLLECTION_FILEHOSTING_VISITS)?;
+        collection_visits.insert_many(batch).await?;
+    }
+
+    if commande.done == Some(true) {
+        // Put flag to indicate this filehost_id has sent all its visits successfully
+        let collection_files_status = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_SYNC_STATUS)?;
+        let filtre = doc!{"claimer": filehost_id, "claimer_type": "filehost"};
+        let ops = doc! {
+            "$currentDate": {"date_ready": true},
+        };
+        collection_files_status.update_one(filtre, ops).upsert(true).await?;
+    }
+
+    // S'assurer d'avoir un filecontroler primary
+    check_primary_filecontroler(mongo, outbound, instance_id.as_str()).await?;
+
+    outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+}
+
+#[derive(Deserialize)]
+struct CommandBatchTransfers {
+    destination_filehost_id: String,
+    batch_size: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct CommandBatchTransfersResponse {
+    ok: bool,
+    destination_filehost_id: String,
+    fuuids: Option<Vec<CommandBatchTransfersResponseFuuid>>
+}
+
+async fn filehost_batch_transfers<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if !wrapper.certificate.verifier_exchanges(vec![Securite::L1Public])? ||
+        !wrapper.certificate.verifier_roles_string(vec!["filecontroler".to_string()])?
+    {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let commande: CommandBatchTransfers = wrapper.message.deserialize()?;
+    let batch_limit = commande.batch_size.unwrap_or_else(|| 10);
+
+    let collection_transfers =
+        mongo.get_collection_typed::<FilehostTransfer>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+
+    // Recuperer les nouveaux transferts en premier (job_picked_up = null)
+    let filtre = doc!{
+        "destination_filehost_id": &commande.destination_filehost_id,
+        "$or": [
+            { FIELD_JOB_PICKED_UP: {"$exists": false} },
+            { FIELD_JOB_PICKED_UP: None::<bool> },
+        ]
+    };
+    let curseur = collection_transfers
+        .find(filtre)
+        .limit(batch_limit as i64)
+        .await?;
+
+    let mut fuuids_list = parse_filehost_visits(mongo, curseur).await?;
+    if fuuids_list.len() < batch_limit {
+        let timeout_transfert = Utc::now() - Duration::seconds(600);
+        // On n'a pas une batch complete. Aller chercher les transferts a re-essayer.
+        let batch_limit_2 = batch_limit - fuuids_list.len();
+        let filtre = doc! {
+            "destination_filehost_id": &commande.destination_filehost_id,
+            FIELD_JOB_PICKED_UP: {"$lte": timeout_transfert}
+        };
+        let curseur = collection_transfers
+            .find(filtre)
+            .limit(batch_limit_2 as i64)
+            .sort(doc!{FIELD_JOB_PICKED_UP: 1})
+            .await?;
+        let fuuids_list_2 = parse_filehost_visits(mongo, curseur).await?;
+        fuuids_list.extend(fuuids_list_2);
+    }
+
+    // Marquer tous les fuuids comme inclus dans une job (timestamp).
+    if fuuids_list.len() > 0 {
+        let fichiers_inclus: Vec<&str> = fuuids_list.iter().map(|f| f.fuuid.as_str()).collect();
+        let filtre_jobs = doc! {"fuuid": {"$in": fichiers_inclus}};
+        let ops = doc! {"$currentDate": {FIELD_JOB_PICKED_UP: true}};
+        collection_transfers.update_many(filtre_jobs, ops).await?;
+    }
+
+    let reponse = CommandBatchTransfersResponse {
+        ok: true,
+        destination_filehost_id: commande.destination_filehost_id,
+        fuuids: Some(fuuids_list),
+    };
+    outbound.respond(wrapper.delivery_info, reponse).await
+}
+
+#[derive(Serialize)]
+struct CommandBatchTransfersResponseFuuid {
+    fuuid: String,
+    source_filehost_ids: Vec<String>,
+}
+
+async fn parse_filehost_visits<M>(
+    mongo: &M,
+    mut curseur: Cursor<FilehostTransfer>
+) -> Result<Vec<CommandBatchTransfersResponseFuuid>, CommonError> where M: MongoDaoTyped {
+    let collection_fuuids =
+        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+
+    let mut fuuids_list = Vec::new();
+
+    while curseur.advance().await? {
+        let row = curseur.deserialize_current()?;
+        let fuuid = row.fuuid;
+        let filtre_fuuid = doc! {"fuuid": &fuuid};
+        if let Some(fuuid_info) = collection_fuuids.find_one(filtre_fuuid).await? {
+            if let Some(visits) = fuuid_info.filehost {
+                let source_filehost_ids = visits.into_keys().collect();
+                let fuuid_response = CommandBatchTransfersResponseFuuid { fuuid, source_filehost_ids };
+                fuuids_list.push(fuuid_response);
+            }
+        }
+    }
+
+    Ok(fuuids_list)
+}
+
+
 /// Process the command part of the transaction (checks, validations, volatile updates),
 /// calls transaction processor and then handles responses and emits events.
 pub async fn process_transaction<M>(
@@ -251,7 +415,6 @@ pub async fn process_transaction<M>(
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in transaction")).await
     };
     match action {
-        // TODO TRANSACTION_ACTION_SAVE_CERTIFICATE | TRANSACTION_ACTION_NEW_CERTIFICATE => save_certificate(mongo, pki, outbound, transaction, wrapper).await,
         TRANSACTION_SET_FILEHOST_FOR_INSTANCE => todo!(),
         TRANSACTION_FILEHOST_DEFAULT => todo!(),
         TRANSACTION_DELETE_DOMAIN => todo!(),

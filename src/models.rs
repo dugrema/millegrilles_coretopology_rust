@@ -305,3 +305,23 @@ pub struct PresenceDomaine {
     pub instance_id: Option<String>,
     pub reclame_fuuids: Option<bool>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FilehostingVisitRow {
+    pub fuuid: String,
+    pub filehost_id: String,
+    #[serde(with = "FromChrono04DateTime")]
+    pub visit_time: DateTime<Utc>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FilehostTransfer {
+    pub destination_filehost_id: String,
+    pub fuuid: String,
+    #[serde(with = "FromChrono04DateTime")]
+    pub created: DateTime<Utc>,
+    #[serde(with = "FromChrono04DateTime")]
+    pub modified: DateTime<Utc>,
+    #[serde(default, with="option_chrono_04_datetime")]
+    pub job_picked_up: Option<DateTime<Utc>>,
+}

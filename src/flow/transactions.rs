@@ -57,9 +57,6 @@ impl TransactionRouter for TopologyTransactionRouter {
         wrapper: TransactionWrapper
     ) -> Result<TransactionOperationAggregator, CommonError> {
         match action.as_str() {
-            // TRANSACTION_ACTION_SAVE_CERTIFICATE | TRANSACTION_ACTION_NEW_CERTIFICATE => {
-            //     save_certificate(self.mongo.as_ref(), wrapper, self.ignore_duplicates).await
-            // },
             TRANSACTION_SET_FILEHOST_FOR_INSTANCE => todo!(),
             TRANSACTION_FILEHOST_DEFAULT => todo!(),
             TRANSACTION_DELETE_DOMAIN => todo!(),
