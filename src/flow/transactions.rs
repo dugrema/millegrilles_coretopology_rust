@@ -1,7 +1,7 @@
 use crate::external::mongo::*;
 use millegrilles_common_rust::async_trait::async_trait;
 use millegrilles_common_rust::error::Error as CommonError;
-use millegrilles_common_rust::mongo_dao::MongoDao;
+use millegrilles_common_rust::mongo_dao::{MongoDao, MongoDaoImpl, MongoDaoTyped};
 use millegrilles_common_rust::mongodb::ClientSession;
 use millegrilles_common_rust::serde_json::Value;
 use millegrilles_common_rust::v3::impls::transaction_service::TransactionServiceImpl;
@@ -23,7 +23,7 @@ impl TopologyTransactionService {
     pub fn new(
         config: Arc<dyn ConfigService>,
         format: Arc<dyn FormatService>,
-        mongo: Arc<dyn MongoDao>,
+        mongo: Arc<MongoDaoImpl>,
         restoring: bool,
     ) -> Self {
         let router = TopologyTransactionRouter { mongo: mongo.clone(), ignore_duplicates: restoring };
@@ -49,7 +49,7 @@ impl TopologyTransactionService {
 }
 
 struct TopologyTransactionRouter {
-    mongo: Arc<dyn MongoDao>,
+    mongo: Arc<MongoDaoImpl>,
     ignore_duplicates: bool,
 }
 
@@ -62,11 +62,11 @@ impl TransactionRouter for TopologyTransactionRouter {
     ) -> Result<TransactionOperationAggregator, CommonError> {
         match action.as_str() {
             TRANSACTION_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(self.mongo.as_ref(), wrapper).await,
-            TRANSACTION_FILEHOST_DEFAULT => todo!(),
-            TRANSACTION_DELETE_DOMAIN => todo!(),
-            TRANSACTION_FILEHOST_ADD_V2 => todo!(),
-            TRANSACTION_FILEHOST_UPDATE => todo!(),
-            TRANSACTION_FILEHOST_DELETE => todo!(),
+            TRANSACTION_FILEHOST_DEFAULT => set_filehost_default(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_DELETE_DOMAIN => delete_domain(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_FILEHOST_UPDATE => update_filehost(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_FILEHOST_DELETE => delete_filehost(self.mongo.as_ref(), wrapper).await,
 
             // Obsolete
             TRANSACTION_FILEHOST_ADD => obsolete(TRANSACTION_FILEHOST_ADD),
@@ -105,11 +105,66 @@ async fn set_filehost_for_instance(
     );
     let mut aggregator = TransactionOperationAggregator::new();
     aggregator.ordered = Some(vec![update_model_versions]);
-    
+
     Ok(aggregator)
 }
 
 fn obsolete(name: &str) -> Result<TransactionOperationAggregator,CommonError> {
     warn!("Obsolete transaction received: {}", name);
     Ok(TransactionOperationAggregator::new())
+}
+
+async fn set_filehost_default<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
+    let transaction_value: TransactionFilehostSetDefault = wrapper.message.deserialize()?;
+
+    let collection_config =
+        mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let filter = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
+    let ops = doc! {
+        "$set": {"value": transaction_value.filehost_id},
+    };
+
+    let update_model_versions = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .upsert(true)
+            .namespace(collection_config.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_versions]);
+
+    Ok(aggregator)
+}
+
+async fn delete_domain<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn add_filehost_v2<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn update_filehost<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn delete_filehost<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
+    todo!()
 }

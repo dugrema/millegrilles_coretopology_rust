@@ -345,3 +345,8 @@ pub struct TransactionSetFilehostInstance {
     pub instance_id: String,
     pub filehost_id: Option<String>,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionFilehostSetDefault {
+    pub filehost_id: String,
+}

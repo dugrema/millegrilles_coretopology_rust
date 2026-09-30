@@ -413,11 +413,11 @@ pub async fn process_transaction<M>(
     };
     match action {
         TRANSACTION_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(outbound, transaction, wrapper).await,
-        TRANSACTION_FILEHOST_DEFAULT => todo!(),
-        TRANSACTION_DELETE_DOMAIN => todo!(),
-        TRANSACTION_FILEHOST_ADD_V2 => todo!(),
-        TRANSACTION_FILEHOST_UPDATE => todo!(),
-        TRANSACTION_FILEHOST_DELETE => todo!(),
+        TRANSACTION_FILEHOST_DEFAULT => set_filehost_default(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_DELETE_DOMAIN => delete_domain(outbound, transaction, wrapper).await,
+        TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(outbound, transaction, wrapper).await,
+        TRANSACTION_FILEHOST_UPDATE => update_filehost(outbound, transaction, wrapper).await,
+        TRANSACTION_FILEHOST_DELETE => delete_filehost(outbound, transaction, wrapper).await,
         _ => {
             info!("Unknown action {} for process_transaction, skipping", action);
             Ok(())
@@ -455,4 +455,78 @@ async fn set_filehost_for_instance(
 
     // Respond OK
     outbound.respond(delivery_info, ErrorMessage::ok()).await
+}
+
+async fn set_filehost_default<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let transaction_value: TransactionFilehostSetDefault = wrapper.message.deserialize()?;
+
+    // Verifier que la valeur n'est pas la meme
+    let collection_config =
+        mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let filtre = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
+    if let Some(entry) = collection_config.find_one(filtre).await? {
+        if entry.value.as_str() == transaction_value.filehost_id.as_str() {
+            // Already done, send back ok
+            return outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+        }
+    }
+
+    // Process transaction
+    let delivery_info = wrapper.delivery_info.clone();
+    if let Err(e) = transaction.process_transaction(wrapper.into(), None).await {
+        error!("Error processing transaction {:?}", e);
+        return outbound.respond(delivery_info, ErrorMessage::err_code(500, "Error processing transaction")).await
+    }
+
+    // Emit filehost update event
+    let routage = RoutageMessageAction::builder(
+        DOMAINE_TOPOLOGIE,
+        EVENEMENT_FILEHOSTING_UPDATE,
+        vec![Securite::L1Public]
+    ).build();
+    outbound.emit_event(routage, ErrorMessage::ok()).await?;
+
+    // Respond OK
+    outbound.respond(delivery_info, ErrorMessage::ok()).await
+}
+
+async fn delete_domain(
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> {
+    todo!()
+}
+
+async fn add_filehost_v2(
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> {
+    todo!()
+}
+
+async fn update_filehost(
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> {
+    todo!()
+}
+
+async fn delete_filehost(
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> {
+    todo!()
 }
