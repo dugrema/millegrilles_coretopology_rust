@@ -8,6 +8,8 @@ use millegrilles_common_rust::v3::impls::transaction_service::TransactionService
 use millegrilles_common_rust::v3::models::{TransactionOperationAggregator, TransactionWrapper};
 use millegrilles_common_rust::v3::{ConfigService, FormatService, TransactionRouter, TransactionService};
 use std::sync::Arc;
+use millegrilles_common_rust::tracing::warn;
+use crate::external::mq::{TRANSACTION_CONFIGURER_CONSIGNATION, TRANSACTION_DELETE_DOMAIN, TRANSACTION_FILEHOST_ADD, TRANSACTION_FILEHOST_ADD_V2, TRANSACTION_FILEHOST_DEFAULT, TRANSACTION_FILEHOST_DELETE, TRANSACTION_FILEHOST_UPDATE, TRANSACTION_MONITOR, TRANSACTION_SET_FICHIERS_PRIMAIRE, TRANSACTION_SET_FILEHOST_FOR_INSTANCE, TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE, TRANSACTION_SUPPRIMER_INSTANCE};
 
 pub struct TopologyTransactionService {
     pub transaction: Arc<dyn TransactionService>,
@@ -58,6 +60,21 @@ impl TransactionRouter for TopologyTransactionRouter {
             // TRANSACTION_ACTION_SAVE_CERTIFICATE | TRANSACTION_ACTION_NEW_CERTIFICATE => {
             //     save_certificate(self.mongo.as_ref(), wrapper, self.ignore_duplicates).await
             // },
+            TRANSACTION_SET_FILEHOST_FOR_INSTANCE => todo!(),
+            TRANSACTION_FILEHOST_DEFAULT => todo!(),
+            TRANSACTION_DELETE_DOMAIN => todo!(),
+            TRANSACTION_FILEHOST_ADD_V2 => todo!(),
+            TRANSACTION_FILEHOST_UPDATE => todo!(),
+            TRANSACTION_FILEHOST_DELETE => todo!(),
+
+            // Obsolete
+            TRANSACTION_FILEHOST_ADD => obsolete(TRANSACTION_FILEHOST_ADD),
+            TRANSACTION_CONFIGURER_CONSIGNATION => obsolete(TRANSACTION_CONFIGURER_CONSIGNATION),
+            TRANSACTION_SET_FICHIERS_PRIMAIRE => obsolete(TRANSACTION_SET_FICHIERS_PRIMAIRE),
+            TRANSACTION_MONITOR => obsolete(TRANSACTION_MONITOR),
+            TRANSACTION_SUPPRIMER_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_INSTANCE),
+            TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE),
+
             _ => Err(CommonError::Str("Unknown transaction action"))
         }
     }
@@ -99,4 +116,9 @@ async fn save_certificate(
     // }
     // 
     // Ok(aggregator)
+}
+
+fn obsolete(name: &str) -> Result<TransactionOperationAggregator,CommonError> {
+    warn!("Obsolete transaction received: {}", name);
+    Ok(TransactionOperationAggregator::new())
 }

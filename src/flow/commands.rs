@@ -38,6 +38,8 @@ pub async fn process_command<M>(
         COMMANDE_FILEHOST_RESET_TRANSFERS => filehost_reset_transfers(mongo, outbound, wrapper).await,
         COMMANDE_BACKUP_SET_DOMAIN_VERSION => set_domain_backup_version(mongo, outbound, wrapper).await,
         COMMAND_DOMAIN_CLAIM_FILES => domain_claim_files(mongo, outbound, wrapper).await,
+        COMMANDE_FILE_VISIT => todo!(),  //domain_claim_files(mongo, outbound, wrapper).await,
+        COMMANDE_FILEHOST_BATCH_TRANSFERS => todo!(),  // domain_claim_files(mongo, outbound, wrapper).await,
         _ => {
             info!("Unknown action {} for process_command, skipping", action);
             Ok(())
@@ -250,6 +252,12 @@ pub async fn process_transaction<M>(
     };
     match action {
         // TODO TRANSACTION_ACTION_SAVE_CERTIFICATE | TRANSACTION_ACTION_NEW_CERTIFICATE => save_certificate(mongo, pki, outbound, transaction, wrapper).await,
+        TRANSACTION_SET_FILEHOST_FOR_INSTANCE => todo!(),
+        TRANSACTION_FILEHOST_DEFAULT => todo!(),
+        TRANSACTION_DELETE_DOMAIN => todo!(),
+        TRANSACTION_FILEHOST_ADD_V2 => todo!(),
+        TRANSACTION_FILEHOST_UPDATE => todo!(),
+        TRANSACTION_FILEHOST_DELETE => todo!(),
         _ => {
             info!("Unknown action {} for process_transaction, skipping", action);
             Ok(())

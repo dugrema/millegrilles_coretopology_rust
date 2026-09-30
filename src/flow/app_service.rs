@@ -18,6 +18,7 @@ use millegrilles_common_rust::v3::{BackupService, ChiffrageService, ConfigServic
 use std::sync::Arc;
 use crate::flow::backup::process_backup;
 use crate::flow::commands::{process_command, process_transaction};
+use crate::flow::filecontroler::process_filecontroler_events;
 use crate::flow::maintenance::process_ticker_job;
 use crate::flow::presence::process_presence_event;
 use crate::flow::requests::process_request;
@@ -151,7 +152,6 @@ impl ApplicationService {
         debug!("process_requests_thread Closed");
     }
 
-    // pub const QUEUE_VOLATILES: &str = "volatiles";
     async fn process_volatiles_thread(&self, incoming: Arc<MessageInboundValidator>) {
         let streamer = incoming.consume_named_queue(
             format!("{}/{}", DOMAIN_NAME, QUEUE_VOLATILES).as_str(),
@@ -178,7 +178,6 @@ impl ApplicationService {
         debug!("process_volatiles_thread Closed");
     }
 
-    // pub const QUEUE_PRESENCE: &str = "presence";
     async fn process_presence_thread(&self, incoming: Arc<MessageInboundValidator>) {
         let streamer = incoming.consume_named_queue(
             format!("{}/{}", DOMAIN_NAME, QUEUE_PRESENCE).as_str(),
@@ -200,7 +199,6 @@ impl ApplicationService {
         debug!("process_presence_thread Closed");
     }
 
-    // pub const QUEUE_FILEHOSTS_BATCH: &str = "filehostsBatch";
     async fn process_filehosts_batch_thread(&self, incoming: Arc<MessageInboundValidator>) {
         let streamer = incoming.consume_named_queue(
             format!("{}/{}", DOMAIN_NAME, QUEUE_FILEHOSTS_BATCH).as_str(),
@@ -210,24 +208,23 @@ impl ApplicationService {
             match result {
                 Ok(message) => {
                     let routing = message.message.routage.clone();
-                    todo!()
-                    // if let Err(e) = process_request(
-                    //     self.mongo.as_ref(),
-                    //     self.outbound.as_ref(),
-                    //     message
-                    // ).await {
-                    //     error!("Request {:?} failed: {}", routing, e);
-                    // }
+                    if let Err(e) = process_command(
+                        self.mongo.as_ref(),
+                        self.config.as_ref(),
+                        self.outbound.as_ref(),
+                        message
+                    ).await {
+                        error!("Command on filehost {:?} failed: {}", routing, e);
+                    }
                 }
                 Err(e) => {
-                    error!("Error processing request message: {}", e);
+                    error!("Error processing filehost command message: {}", e);
                 }
             }
         }
-        debug!("process_requests_thread Closed");
+        debug!("process_filehosts_batch_thread Closed");
     }
 
-    // pub const QUEUE_FILECONTROLER_EVENTS: &str = "filecontrolerEvents";
     async fn process_filecontroler_events_thread(&self, incoming: Arc<MessageInboundValidator>) {
         let streamer = incoming.consume_named_queue(
             format!("{}/{}", DOMAIN_NAME, QUEUE_FILECONTROLER_EVENTS).as_str(),
@@ -237,14 +234,13 @@ impl ApplicationService {
             match result {
                 Ok(message) => {
                     let routing = message.message.routage.clone();
-                    todo!()
-                    // if let Err(e) = process_request(
-                    //     self.mongo.as_ref(),
-                    //     self.outbound.as_ref(),
-                    //     message
-                    // ).await {
-                    //     error!("Request {:?} failed: {}", routing, e);
-                    // }
+                    if let Err(e) = process_filecontroler_events(
+                        self.mongo.as_ref(),
+                        self.outbound.as_ref(),
+                        message
+                    ).await {
+                        error!("Request {:?} failed: {}", routing, e);
+                    }
                 }
                 Err(e) => {
                     error!("Error processing request message: {}", e);
