@@ -7,6 +7,7 @@ use millegrilles_common_rust::chrono::Utc;
 use millegrilles_common_rust::common_messages::DemandeSignature;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
+use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::millegrilles_cryptographie::x509::EnveloppeCertificat;
 use millegrilles_common_rust::mongo_dao::{MongoDao, MongoDaoTyped};
 use millegrilles_common_rust::mongodb::options::Hint;
@@ -32,11 +33,11 @@ pub async fn process_command<M>(
     };
     match action {
         COMMANDE_SET_CLEID_BACKUP_DOMAINE => set_domain_backup_keyid(mongo, outbound, wrapper).await,
-        COMMANDE_CLAIM_AND_FILEHOST_VISITS_FOR_FUUIDS => todo!(),
-        COMMANDE_FILEHOST_RESET_VISITS_CLAIMS => todo!(),
-        COMMANDE_FILEHOST_RESET_TRANSFERS => todo!(),
-        COMMANDE_BACKUP_SET_DOMAIN_VERSION => todo!(),
-        COMMAND_DOMAIN_CLAIM_FILES => todo!(),
+        COMMANDE_CLAIM_AND_FILEHOST_VISITS_FOR_FUUIDS => claim_filehost_visits_for_fuuids(mongo, outbound, wrapper).await,
+        COMMANDE_FILEHOST_RESET_VISITS_CLAIMS => filehost_reset_visits_claims(mongo, outbound, wrapper).await,
+        COMMANDE_FILEHOST_RESET_TRANSFERS => filehost_reset_transfers(mongo, outbound, wrapper).await,
+        COMMANDE_BACKUP_SET_DOMAIN_VERSION => set_domain_backup_version(mongo, outbound, wrapper).await,
+        COMMAND_DOMAIN_CLAIM_FILES => domain_claim_files(mongo, outbound, wrapper).await,
         _ => {
             info!("Unknown action {} for process_command, skipping", action);
             Ok(())
@@ -92,6 +93,144 @@ async fn set_domain_backup_keyid<M>(
         "$currentDate": { CHAMP_MODIFICATION: true }
     };
     collection.update_one(filtre, ops).upsert(true).await?;
+
+    outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+}
+
+async fn claim_filehost_visits_for_fuuids<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn filehost_reset_visits_claims<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let collection_fuuids =
+        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let collection_transfers =
+        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+
+    collection_fuuids.delete_many(doc!{}).await?;
+    collection_transfers.delete_many(doc!{}).await?;
+
+    // Emettre evenement reset claims (e.g. GrosFichiers), reload visites (filecontrolers).
+    let routage_reset_claims = RoutageMessageAction::builder(
+        TOPOLOGIE_NOM_DOMAINE, EVENEMENT_RESET_VISITS_CLAIMS, vec![Securite::L1Public]).build();
+    outbound.emit_event(routage_reset_claims, ErrorMessage::ok()).await?;
+
+    outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+}
+
+async fn filehost_reset_transfers<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    // Retirer le champ job_picked_up pour permettre aux controleurs de reprendre les jobs immediatement
+    let collection_transfers =
+        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+    let filtre = doc!{"job_picked_up": {"$exists":true}};
+    let ops = doc! {"$unset": {"job_picked_up": true}, "$currentDate": {"modified": true}};
+    collection_transfers.update_many(filtre, ops).await?;
+
+    // Reverifie chaque transfert, enleve ceux qui ne s'appliquent plus et cree les nouveaux
+    todo!()
+    // entretien_transfert_fichiers(middleware).await?;
+    //
+    // outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+}
+
+#[derive(Deserialize)]
+struct CommandSetDomainBackupVersion {
+    domaine: String,
+    version: String,
+}
+
+async fn set_domain_backup_version<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if !wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let command: CommandSetDomainBackupVersion = wrapper.message.deserialize()?;
+    let collection = mongo.get_collection(COLLECTION_DOMAINS)?;
+    let filtre = doc!{"domaine": &command.domaine};
+    let ops = doc! {
+        "$set": {"backup_version": &command.version},
+        "$currentDate": {"modified": true},
+    };
+    let result = collection.update_one(filtre, ops).await?;
+
+    if result.matched_count == 1 {
+        // Emettre evenement de mise a jour de backup.
+        // Va declencher une synchronisation des fichiers de backup.
+        let routage = RoutageMessageAction::builder(DOMAINE_TOPOLOGIE, BACKUP_EVENEMENT_MAJ, vec![Securite::L1Public])
+            .build();
+        outbound.emit_event(routage, ErrorMessage::ok()).await?;
+
+        outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+    } else {
+        outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "Domain not found")).await
+    }
+}
+
+#[derive(Deserialize)]
+struct RequestFuuidsVisits {
+    fuuids: Vec<String>,
+    done: Option<bool>,
+}
+
+async fn domain_claim_files<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    let certificate = wrapper.certificate.as_ref();
+    let domains = certificate.get_extensions()?.map(|e| e.domaines);
+
+    let request: RequestFuuidsVisits = wrapper.message.deserialize()?;
+    let now = Utc::now();
+
+    let mut batch = Vec::with_capacity(request.fuuids.len());
+    for fuuid in request.fuuids {
+        batch.push(doc!{"fuuid": fuuid, "claim_date": &now, "domains": &domains});
+    }
+    if ! batch.is_empty() {
+        let collection_claims = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_CLAIMS)?;
+        collection_claims.insert_many(batch).await?;
+    }
+
+    if request.done == Some(true) {
+        // Put flag to indicate this domain has sent all its claims successfully
+        let collection_files_status = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_SYNC_STATUS)?;
+        if let Some(domains) = &domains {
+            if let Some(domains_list) = domains {
+                for domain in domains_list {
+                    let filtre = doc! {"claimer": domain, "claimer_type": "domain"};
+                    let ops = doc! {
+                        "$currentDate": {"date_ready": true},
+                    };
+                    collection_files_status.update_one(filtre, ops).upsert(true).await?;
+                }
+            }
+        }
+    }
 
     outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
 }

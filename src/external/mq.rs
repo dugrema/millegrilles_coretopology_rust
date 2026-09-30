@@ -61,7 +61,7 @@ pub const EVENEMENT_PRESENCE_INSTANCE_V2: &str = "presenceInstanceV2";
 pub const EVENEMENT_FILEHOST_USAGE: &str = "filehostUsage";
 pub const EVENEMENT_FILEHOST_NEWFUUID: &str = "filehostNewFuuid";
 pub const EVENEMENT_PRESENCE_INSTANCE_APPLICATIONS_V2: &str = "presenceInstanceApplicationsV2";
-
+pub const EVENEMENT_RESET_VISITS_CLAIMS: &str = "resetVisitsClaims";
 
 pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
     // Configure the queues and add to messaging service (will spawn consumer threads)
