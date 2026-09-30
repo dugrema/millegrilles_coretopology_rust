@@ -30,15 +30,15 @@ pub async fn process_request<M>(
         REQUEST_SERVER_INSTANCES_V2 => request_deployed_userapps_v2(mongo, outbound, wrapper).await,
         REQUEST_SERVER_INSTANCE_CONFIGURATION => request_server_configuration(mongo, outbound, wrapper).await,
         REQUETE_GET_CLEID_BACKUP_DOMAINE => request_get_domain_backup_keyid(mongo, outbound, wrapper).await,
-        REQUETE_CONFIGURATION_FILEHOSTS => todo!(),
-        REQUEST_FILEHOSTS_FOR_FUUIDS => todo!(),
-        REQUETE_USERAPPS_DEPLOYEES_V2 => todo!(),
-        REQUETE_FICHE_MILLEGRILLE => todo!(),
-        REQUETE_GET_FILEHOSTS => todo!(),
-        REQUETE_GET_FILECONTROLERS => todo!(),
-        REQUETE_GET_FILEHOST_FOR_INSTANCE => todo!(),
-        REQUETE_GET_FILEHOST_FOR_EXTERNAL => todo!(),
-        REQUETE_GET_DOMAINS_BACKUP_VERSIONS => todo!(),
+        REQUETE_CONFIGURATION_FILEHOSTS => request_filehost_configuration(mongo, outbound, wrapper).await,
+        REQUEST_FILEHOSTS_FOR_FUUIDS => request_filehosts_for_fuuid(mongo, outbound, wrapper).await,
+        REQUETE_USERAPPS_DEPLOYEES_V2 => request_deployed_userapps(mongo, outbound, wrapper).await,
+        REQUETE_FICHE_MILLEGRILLE => request_millegrille_fiche(mongo, outbound, wrapper).await,
+        REQUETE_GET_FILEHOSTS => request_filehosts(mongo, outbound, wrapper).await,
+        REQUETE_GET_FILECONTROLERS => request_filecontrolers(mongo, outbound, wrapper).await,
+        REQUETE_GET_FILEHOST_FOR_INSTANCE => request_filehost_for_instance(mongo, outbound, wrapper).await,
+        REQUETE_GET_FILEHOST_FOR_EXTERNAL => request_filehost_for_external(mongo, outbound, wrapper).await,
+        REQUETE_GET_DOMAINS_BACKUP_VERSIONS => request_domains_backup_versions(mongo, outbound, wrapper).await,
 
         _ => {
             info!("Unknown action {} for process_requests, skipping", action);
@@ -214,7 +214,6 @@ struct ResponseGetCleidBackupDomaine {
     cle_id: String,
 }
 
-
 async fn request_get_domain_backup_keyid<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
@@ -244,4 +243,76 @@ async fn request_get_domain_backup_keyid<M>(
 
     let response = ResponseGetCleidBackupDomaine { ok: true, cle_id };
     outbound.respond(wrapper.delivery_info, response).await
+}
+
+async fn request_filehost_configuration<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_filehosts_for_fuuid<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_deployed_userapps<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_millegrille_fiche<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_filehosts<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_filecontrolers<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_filehost_for_instance<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_filehost_for_external<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_domains_backup_versions<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
 }
