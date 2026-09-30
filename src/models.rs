@@ -373,3 +373,19 @@ pub struct EventFilehost {
 pub struct FilehostRestoreTransaction {
     pub filehost_id: String,
 }
+
+#[derive(Deserialize)]
+pub struct FilehostUpdateTransaction {
+    pub filehost_id: String,
+    pub instance_id: Option<String>,
+    pub sync_active: Option<bool>,
+    pub tls_external: Option<String>,
+    pub url_external: Option<String>,
+    pub url_internal: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FilehostDeleteTransaction {
+    pub filehost_id: String,
+    pub reset_default: Option<bool>,
+}

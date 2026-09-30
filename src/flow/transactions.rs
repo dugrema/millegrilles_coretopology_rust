@@ -213,12 +213,81 @@ async fn update_filehost<M>(
     mongo: &M,
     wrapper: TransactionWrapper,
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
-    todo!()
+    let doc_transaction: FilehostUpdateTransaction = wrapper.message.deserialize()?;
+
+    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let filter = doc! {"filehost_id": doc_transaction.filehost_id};
+    let mut set_ops = doc!{};
+    if let Some(inner) = doc_transaction.instance_id {
+        set_ops.insert("instance_id", inner);
+    }
+    if let Some(inner) = doc_transaction.url_internal {
+        set_ops.insert("url_internal", inner);
+    }
+    if let Some(inner) = doc_transaction.url_external {
+        set_ops.insert("url_external", inner);
+    }
+    if let Some(inner) = doc_transaction.tls_external {
+        set_ops.insert("tls_external", inner);
+    }
+    if let Some(inner) = doc_transaction.sync_active {
+        set_ops.insert("sync_active", inner);
+    }
+    let ops = doc!{
+        "$set": set_ops,
+        "$currentDate": {"modified": true}
+    };
+
+    let update_model_versions = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_versions]);
+
+    Ok(aggregator)
 }
 
 async fn delete_filehost<M>(
     mongo: &M,
     wrapper: TransactionWrapper,
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
-    todo!()
+    let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+
+    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let filter = doc!{"filehost_id": &transaction_value.filehost_id };
+    let ops = doc !{
+        "$set": {"deleted": true},
+        "$currentDate": {"modified": true},
+    };
+    let update_model_filehost = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+
+    let mut ordered = vec![update_model_filehost];
+    
+    if transaction_value.reset_default == Some(true) {
+        // Additional operation to remove the default filehost configuration
+        let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+        let filtre_configuration = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT, "value": &transaction_value.filehost_id};
+        let delete_model_versions = WriteModel::DeleteOne(
+            DeleteOneModel::builder()
+                .namespace(collection_configuration.namespace())
+                .filter(filtre_configuration)
+                .build()
+        );
+        ordered.push(delete_model_versions);
+    }
+
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(ordered);
+
+    Ok(aggregator)
 }

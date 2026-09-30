@@ -66,6 +66,9 @@ pub const EVENEMENT_FILEHOST_TRANSFERSUPDATED: &str = "transfersUpdated";
 pub const EVENEMENT_FILEHOSTING_UPDATE: &str = "filehostingUpdate";
 pub const EVENEMENT_FILEHOST_EVENT: &str = "filehost";
 pub const EVENEMENT_FILEHOST_EVENTNEW: &str = "new";
+pub const EVENEMENT_FILEHOST_EVENTUPDATE: &str = "update";
+pub const EVENEMENT_FILEHOST_EVENTDELETE: &str = "delete";
+
 
 pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
     // Configure the queues and add to messaging service (will spawn consumer threads)
