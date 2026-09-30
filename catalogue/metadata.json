@@ -1,0 +1,8 @@
+{
+  "name": "coretopology",
+  "version": "BUILD",
+  "labels": {
+    "en": "System configuration and telmetry for MilleGrilles",
+    "fr": "Gestionnaire de configuration et telemetrie pour MilleGrilles"
+  }
+}
