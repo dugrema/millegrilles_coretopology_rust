@@ -19,6 +19,7 @@ use std::sync::Arc;
 use crate::flow::backup::process_backup;
 use crate::flow::commands::{process_command, process_transaction};
 use crate::flow::maintenance::process_ticker_job;
+use crate::flow::presence::process_presence_event;
 use crate::flow::requests::process_request;
 use crate::flow::transactions::TopologyTransactionService;
 
@@ -187,21 +188,16 @@ impl ApplicationService {
             match result {
                 Ok(message) => {
                     let routing = message.message.routage.clone();
-                    todo!()
-                    // if let Err(e) = process_request(
-                    //     self.mongo.as_ref(),
-                    //     self.outbound.as_ref(),
-                    //     message
-                    // ).await {
-                    //     error!("Request {:?} failed: {}", routing, e);
-                    // }
+                    if let Err(e) = process_presence_event(self.mongo.as_ref(), message).await {
+                        error!("Presence event {:?} handling failed: {}", routing, e);
+                    }
                 }
                 Err(e) => {
-                    error!("Error processing request message: {}", e);
+                    error!("Error processing presence event: {}", e);
                 }
             }
         }
-        debug!("process_requests_thread Closed");
+        debug!("process_presence_thread Closed");
     }
 
     // pub const QUEUE_FILEHOSTS_BATCH: &str = "filehostsBatch";

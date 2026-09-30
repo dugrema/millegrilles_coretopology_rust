@@ -5,3 +5,4 @@ mod requests;
 mod commands;
 pub mod restore;
 pub mod transactions;
+mod presence;

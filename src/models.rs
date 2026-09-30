@@ -298,3 +298,10 @@ pub struct RequeteFilehostItem {
     pub modified: DateTime<Utc>,
     pub fuuid: Option<FileUsage>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PresenceDomaine {
+    pub domaine: Option<String>,
+    pub instance_id: Option<String>,
+    pub reclame_fuuids: Option<bool>,
+}

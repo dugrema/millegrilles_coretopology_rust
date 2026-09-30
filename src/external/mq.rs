@@ -23,7 +23,6 @@ pub const REQUETE_GET_CLEID_BACKUP_DOMAINE: &str = "getCleidBackupDomaine";
 pub const REQUETE_CONFIGURATION_FILEHOSTS: &str = "getFilehostConfiguration";
 pub const REQUETE_GET_FILEHOSTS: &str = "getFilehosts";
 pub const REQUETE_GET_FILECONTROLERS: &str = "getFilecontrolers";
-pub const REQUETE_GET_FILEHOST_FOR_EXTERNAL: &str = "getFilehostForExternal";
 pub const REQUETE_GET_DOMAINS_BACKUP_VERSIONS: &str = "getDomainBackupVersions";
 pub const REQUEST_SERVER_INSTANCES_V2: &str = "requestServerInstancesV2";
 pub const REQUEST_SERVER_INSTANCE_CONFIGURATION: &str = "requestServerInstanceConfiguration";
@@ -110,7 +109,6 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILEHOSTS), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILECONTROLERS), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILEHOST_FOR_INSTANCE), exchange: Securite::L1Public },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILEHOST_FOR_EXTERNAL), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_DOMAINS_BACKUP_VERSIONS), exchange: Securite::L1Public },
             ],
             ttl: Some(QUEUE_TTL_DEFAULT),
