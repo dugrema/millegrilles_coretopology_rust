@@ -18,11 +18,7 @@ pub const QUEUE_BACKUP: &str = "backup";
 
 // Requests
 pub const REQUETE_USERAPPS_DEPLOYEES_V2: &str = "listeUserappsDeployeesV2";
-pub const REQUETE_LISTE_DOMAINES: &str = "listeDomaines";
-pub const REQUETE_RESOLVE_IDMG: &str = "resolveIdmg";
-pub const REQUETE_APPLICATIONS_TIERS: &str = "applicationsTiers";
-pub const REQUETE_CONSIGNATION_FICHIERS: &str = "getConsignationFichiers";
-pub const REQUETE_GET_TOKEN_HEBERGEMENT: &str = "getTokenHebergement";
+pub const REQUEST_DOMAIN_LIST: &str = "listeDomaines";
 pub const REQUETE_GET_CLEID_BACKUP_DOMAINE: &str = "getCleidBackupDomaine";
 pub const REQUETE_CONFIGURATION_FILEHOSTS: &str = "getFilehostConfiguration";
 pub const REQUETE_GET_FILEHOSTS: &str = "getFilehosts";
@@ -100,7 +96,7 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
         ConfigQueue {
             nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_REQUESTS),
             routing_keys: vec![
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_LISTE_DOMAINES), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_DOMAIN_LIST), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_SERVER_INSTANCES_V2), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_SERVER_INSTANCE_APPLICATIONS), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_SERVER_INSTANCE_CONFIGURATION), exchange: Securite::L3Protege },
@@ -108,17 +104,11 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_CONFIGURATION_FILEHOSTS), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_FILEHOSTS_FOR_FUUIDS), exchange: Securite::L3Protege },
 
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_LISTE_DOMAINES), exchange: Securite::L2Prive },
+                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_DOMAIN_LIST), exchange: Securite::L2Prive },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_USERAPPS_DEPLOYEES_V2), exchange: Securite::L2Prive },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_RESOLVE_IDMG), exchange: Securite::L2Prive },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_FICHE_MILLEGRILLE), exchange: Securite::L2Prive },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_APPLICATIONS_TIERS), exchange: Securite::L2Prive },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_CONSIGNATION_FICHIERS), exchange: Securite::L2Prive },
 
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_FICHE_MILLEGRILLE), exchange: Securite::L1Public },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_APPLICATIONS_TIERS), exchange: Securite::L1Public },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_CONSIGNATION_FICHIERS), exchange: Securite::L1Public },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_TOKEN_HEBERGEMENT), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILEHOSTS), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILECONTROLERS), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILEHOST_FOR_INSTANCE), exchange: Securite::L1Public },

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use millegrilles_common_rust::chrono::{DateTime, Utc};
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::mongo_serde::option_chrono_04_datetime;
@@ -45,4 +46,36 @@ impl From<DomainRow> for DomainItemResponse {
             backup_version: row.backup_version,
         }
     }
+}
+
+
+type ApplicationLabels = HashMap<String, String>;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebItem {
+    pub admin: Option<bool>,
+    pub port: Option<u16>,
+    pub path: Option<String>,
+    pub labels: Option<ApplicationLabels>,
+    pub api: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApplicationInfo {
+    pub name: String,
+    pub alias: Option<String>,
+    pub version: String,
+    pub securite: Option<String>,
+    pub labels: ApplicationLabels,
+    pub path: Option<String>,
+    pub web: Option<Vec<WebItem>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApplicationStatusV2 {
+    pub instance_id: String,
+    pub applications: HashMap<String, ApplicationInfo>,
+    pub securite: String,
+    pub supprime: bool,
+    pub timestamp: DateTime<Utc>,
 }

@@ -8,6 +8,8 @@ pub const COLLECTION_NAME_TRACKING: &str = "CoreTopology/tracking";
 pub const INDEX_REDO_LOG_ID: &str = "redo_log_id";
 
 pub const COLLECTION_DOMAINS: &str = "CoreTopologie/domains";
+pub const COLLECTION_CONFIGURED_APPLICATIONS_V2: &str = "CoreTopologie/instances/configuredApplicationsV2";
+
 pub const NOM_COLLECTION_MILLEGRILLES: &str = "CoreTopologie/millegrilles";
 pub const NOM_COLLECTION_MILLEGRILLES_ADRESSES: &str = "CoreTopologie/millegrillesAdresses";
 pub const NOM_COLLECTION_TOKENS: &str = "CoreTopologie/tokens";
@@ -22,7 +24,6 @@ pub const NOM_COLLECTION_FILEHOSTING_SYNC_STATUS: &str = "CoreTopologie/filehost
 pub const NOM_COLLECTION_FILEHOSTING_FUUIDS_WORK: &str = "CoreTopologie/filehostingFuuidsWork";
 pub const NOM_COLLECTION_INSTANCE_STATUS_V2: &str = "CoreTopologie/instances/statusV2";
 pub const NOM_COLLECTION_INSTANCE_CONFIGURATION: &str = "CoreTopologie/instances/configuration";
-pub const NOM_COLLECTION_INSTANCE_CONFIGURED_APPLICATIONS_V2: &str = "CoreTopologie/instances/configuredApplicationsV2";
 
 pub const INDEX_DOMAINE: &str = "domaine";
 pub const INDEX_NOEUDS: &str = "noeuds";
