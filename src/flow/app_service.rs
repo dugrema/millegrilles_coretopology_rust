@@ -1,6 +1,13 @@
 use crate::constants::*;
 use crate::external::mongo::*;
 use crate::external::mq::*;
+use crate::flow::backup::process_backup;
+use crate::flow::commands::{process_command, process_transaction};
+use crate::flow::filecontroler::process_filecontroler_events;
+use crate::flow::maintenance::process_ticker_job;
+use crate::flow::presence::process_presence_event;
+use crate::flow::requests::process_request;
+use crate::flow::transactions::TopologyTransactionService;
 use millegrilles_common_rust::chrono::Utc;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::mongo_dao::MongoDaoImpl;
@@ -14,19 +21,11 @@ use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFaca
 use millegrilles_common_rust::v3::impls::backup_restorer::RestorationState;
 use millegrilles_common_rust::v3::impls::config_service::ConfigServiceDbImpl;
 use millegrilles_common_rust::v3::impls::messaging_service::MessagingServiceImpl;
-use millegrilles_common_rust::v3::{BackupService, ChiffrageService, ConfigService, PkiService};
+use millegrilles_common_rust::v3::{BackupService, ChiffrageService, ConfigService};
 use std::sync::Arc;
-use crate::flow::backup::process_backup;
-use crate::flow::commands::{process_command, process_transaction};
-use crate::flow::filecontroler::process_filecontroler_events;
-use crate::flow::maintenance::process_ticker_job;
-use crate::flow::presence::process_presence_event;
-use crate::flow::requests::process_request;
-use crate::flow::transactions::TopologyTransactionService;
 
 /// Handles queue consumer threads, calls individual routing methods
 pub struct ApplicationService {
-    pki: Arc<dyn PkiService>,
     config: Arc<dyn ConfigService>,
     chiffrage: Arc<dyn ChiffrageService>,
     outbound: Arc<MessageOutboundFacade>,
@@ -37,7 +36,6 @@ pub struct ApplicationService {
 
 impl ApplicationService {
     pub fn new(
-        pki: Arc<dyn PkiService>,
         config: Arc<dyn ConfigService>,
         chiffrage: Arc<dyn ChiffrageService>,
         outbound: Arc<MessageOutboundFacade>,
@@ -46,7 +44,6 @@ impl ApplicationService {
         backup: Arc<dyn BackupService>,
     ) -> Self {
         Self {
-            pki,
             config,
             chiffrage,
             outbound,
@@ -259,7 +256,6 @@ impl ApplicationService {
                 Ok(message) => {
                     if let Err(e) = process_transaction(
                         self.mongo.as_ref(),
-                        self.pki.as_ref(),
                         self.outbound.as_ref(),
                         self.transaction.as_ref(),
                         message

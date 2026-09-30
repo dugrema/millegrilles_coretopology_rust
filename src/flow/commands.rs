@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use millegrilles_common_rust::{bson, serde_json};
+use crate::constants::DOMAIN_NAME;
 use crate::external::mongo::*;
 use crate::external::mq::*;
 use crate::flow::filecontroler::{add_missing_file_transfers, check_primary_filecontroler, entretien_transfert_fichiers};
@@ -13,17 +12,16 @@ use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
-use millegrilles_common_rust::mongodb::{ClientSession, Cursor};
+use millegrilles_common_rust::mongodb::Cursor;
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
+use millegrilles_common_rust::serde_json;
 use millegrilles_common_rust::serde_json::Value;
 use millegrilles_common_rust::tokio_stream::StreamExt;
 use millegrilles_common_rust::tracing::{debug, error, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
-use millegrilles_common_rust::v3::{ConfigService, PkiService, TransactionService};
-use millegrilles_common_rust::v3::impls::rabbitmq_consumer::DeliveryInfo;
-use crate::constants::DOMAIN_NAME;
+use std::collections::{HashMap, HashSet};
 
 pub async fn process_command<M>(
     mongo: &M,
@@ -509,7 +507,6 @@ async fn parse_filehost_visits<M>(
 /// calls transaction processor and then handles responses and emits events.
 pub async fn process_transaction<M>(
     mongo: &M,
-    pki: &dyn PkiService,
     outbound: &MessageOutboundFacade,
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated

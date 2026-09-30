@@ -25,9 +25,9 @@ impl TopologyTransactionService {
         config: Arc<dyn ConfigService>,
         format: Arc<dyn FormatService>,
         mongo: Arc<MongoDaoImpl>,
-        restoring: bool,
+        _restoring: bool,
     ) -> Self {
-        let router = TopologyTransactionRouter { mongo: mongo.clone(), ignore_duplicates: restoring };
+        let router = TopologyTransactionRouter { mongo: mongo.clone() };
         let service = TransactionServiceImpl::new(
             config,
             format,
@@ -51,7 +51,6 @@ impl TopologyTransactionService {
 
 struct TopologyTransactionRouter {
     mongo: Arc<MongoDaoImpl>,
-    ignore_duplicates: bool,
 }
 
 #[async_trait]
@@ -272,7 +271,7 @@ async fn delete_filehost<M>(
     );
 
     let mut ordered = vec![update_model_filehost];
-    
+
     if transaction_value.reset_default == Some(true) {
         // Additional operation to remove the default filehost configuration
         let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
