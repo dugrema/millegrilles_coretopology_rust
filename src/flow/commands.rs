@@ -2,11 +2,13 @@ use crate::external::mongo::*;
 use crate::external::mq::*;
 use crate::flow::transactions::TopologyTransactionService;
 use millegrilles_common_rust::bson::doc;
+use millegrilles_common_rust::certificats::VerificateurPermissions;
+use millegrilles_common_rust::chrono::Utc;
 use millegrilles_common_rust::common_messages::DemandeSignature;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::millegrilles_cryptographie::x509::EnveloppeCertificat;
-use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
+use millegrilles_common_rust::mongo_dao::{MongoDao, MongoDaoTyped};
 use millegrilles_common_rust::mongodb::options::Hint;
 use millegrilles_common_rust::serde_json;
 use millegrilles_common_rust::tracing::{info, warn};
@@ -14,19 +16,27 @@ use millegrilles_common_rust::v3::{ConfigService, PkiService};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
+use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use crate::constants::DOMAIN_NAME;
+use crate::models::*;
 
-pub async fn process_command(
+pub async fn process_command<M>(
+    mongo: &M,
     config: &dyn ConfigService,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated
-) -> Result<(), CommonError> {
+) -> Result<(), CommonError> where M: MongoDaoTyped {
     let action = match wrapper.get_routing_action() {
         Some(action) => action,
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in command")).await
     };
     match action {
-        // TODO COMMAND_ACTION_SIGN_CSR => sign_csr(config, outbound, wrapper).await,
+        COMMANDE_SET_CLEID_BACKUP_DOMAINE => set_domain_backup_keyid(mongo, outbound, wrapper).await,
+        COMMANDE_CLAIM_AND_FILEHOST_VISITS_FOR_FUUIDS => todo!(),
+        COMMANDE_FILEHOST_RESET_VISITS_CLAIMS => todo!(),
+        COMMANDE_FILEHOST_RESET_TRANSFERS => todo!(),
+        COMMANDE_BACKUP_SET_DOMAIN_VERSION => todo!(),
+        COMMAND_DOMAIN_CLAIM_FILES => todo!(),
         _ => {
             info!("Unknown action {} for process_command, skipping", action);
             Ok(())
@@ -34,25 +44,56 @@ pub async fn process_command(
     }
 }
 
-async fn sign_csr(
-    config: &dyn ConfigService,
+#[derive(Deserialize)]
+pub struct CommandSetDomainBackupKeyid {
+    pub domaine: String,
+    pub cle_id: Option<String>,
+    pub reset: Option<bool>,
+}
+
+async fn set_domain_backup_keyid<M>(
+    mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
-) -> Result<(), CommonError> {
-    todo!()
-    // let command: DemandeSignature = wrapper.message.deserialize()?;
-    //
-    // if let Err(e) = validate_csr_signature_request(&command, wrapper.certificate.as_ref()) {
-    //     warn!("Access denied on a CSR signing request: {:?}", e);
-    //     return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Request denied")).await
-    // }
-    //
-    // if let Err(e) = sign_with_certissuer(config, &wrapper).await {
-    //     warn!("Error executing CSR signing request: {:?}", e);
-    //     return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(500, "Error signing CSR")).await
-    // }
-    //
-    // outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    let commande: CommandSetDomainBackupKeyid = wrapper.message.deserialize()?;
+
+    let now = Utc::now();
+    let certificate = wrapper.certificate.as_ref();
+    let certificat_subject = certificate.subject()?;
+    let instance_id = match certificat_subject.get("commonName") {
+        Some(inner) => inner.as_str(),
+        None => Err("Certificat sans commonName")?
+    };
+
+    let domaine = commande.domaine;
+
+    if !certificate.verifier_exchanges(vec![Securite::L3Protege])? ||
+        !certificate.verifier_domaines(vec![domaine.clone()])?
+    {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    }
+
+    let filtre = doc!{"domaine": &domaine};
+    let collection = mongo.get_collection_typed::<DomainRow>(COLLECTION_DOMAINS)?;
+    let cle_id_backup = match commande.reset {
+        Some(true) => None,
+        _ => match commande.cle_id {
+            Some(inner) => Some(inner),
+            None => {
+                // Err("cle_id manquant de la commande")?
+                return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(400, "Value cle_id is missing from the command")).await
+            }
+        }
+    };
+    let ops = doc! {
+        "$setOnInsert": {"instance_id": instance_id, CHAMP_CREATION: now, "dirty": true, "reclame_fuuids": false},
+        "$set": { "cle_id_backup": cle_id_backup },
+        "$currentDate": { CHAMP_MODIFICATION: true }
+    };
+    collection.update_one(filtre, ops).upsert(true).await?;
+
+    outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
 }
 
 /// Process the command part of the transaction (checks, validations, volatile updates),

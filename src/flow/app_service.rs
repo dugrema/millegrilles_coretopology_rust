@@ -161,21 +161,21 @@ impl ApplicationService {
             match result {
                 Ok(message) => {
                     let routing = message.message.routage.clone();
-                    todo!()
-                    // if let Err(e) = process_request(
-                    //     self.mongo.as_ref(),
-                    //     self.outbound.as_ref(),
-                    //     message
-                    // ).await {
-                    //     error!("Request {:?} failed: {}", routing, e);
-                    // }
+                    if let Err(e) = process_command(
+                        self.mongo.as_ref(),
+                        self.config.as_ref(),
+                        self.outbound.as_ref(),
+                        message
+                    ).await {
+                        error!("Volatile message {:?} failed: {}", routing, e);
+                    }
                 }
                 Err(e) => {
-                    error!("Error processing request message: {}", e);
+                    error!("Error processing volatile message: {}", e);
                 }
             }
         }
-        debug!("process_requests_thread Closed");
+        debug!("process_volatiles_thread Closed");
     }
 
     // pub const QUEUE_PRESENCE: &str = "presence";
