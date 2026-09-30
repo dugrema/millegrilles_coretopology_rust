@@ -40,6 +40,10 @@ pub const CHAMP_ADRESSE: &str = "adresse";
 pub const CHAMP_ADRESSES: &str = "adresses";
 pub const CHAMP_CONSIGNATION_ID: &str = "consignation_id";
 
+pub const FIELD_CONFIGURATION_FILEHOST_DEFAULT: &str = "filehost.default";
+pub const FIELD_CONFIGURATION_FILECONTROLER_PRIMARY: &str = "filecontroler.primary";
+pub const FIELD_LAST_CLAIM_DATE: &str = "last_claim_date";
+
 pub async fn create_index_mongodb(db: &dyn MongoDao, config: &dyn ConfigMessages) -> Result<(), CommonError> {
     db.create_index(
         config,

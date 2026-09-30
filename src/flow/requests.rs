@@ -6,7 +6,7 @@ use crate::external::mongo::*;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
-use millegrilles_common_rust::tracing::{info, warn};
+use millegrilles_common_rust::tracing::{debug, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
@@ -41,7 +41,6 @@ pub async fn process_request<M>(
         REQUETE_GET_FILEHOSTS => request_filehosts(mongo, outbound, wrapper).await,
         REQUETE_GET_FILECONTROLERS => request_filecontrolers(mongo, outbound, wrapper).await,
         REQUETE_GET_FILEHOST_FOR_INSTANCE => request_filehost_for_instance(mongo, outbound, wrapper).await,
-        REQUETE_GET_FILEHOST_FOR_EXTERNAL => request_filehost_for_external(mongo, outbound, wrapper).await,
         REQUETE_GET_DOMAINS_BACKUP_VERSIONS => request_domains_backup_versions(mongo, outbound, wrapper).await,
 
         _ => {
@@ -413,12 +412,57 @@ async fn request_filehosts<M>(
     outbound.respond(wrapper.delivery_info, response).await
 }
 
+#[derive(Deserialize)]
+struct RequestFilecontrolersList {
+    instance_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RequeteFilecontrolersListResponse {
+    ok: bool,
+    list: Vec<RequeteFilehostItem>,
+    filecontroler_primary: Option<String>,
+}
+
 async fn request_filecontrolers<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    let requete: RequestFilecontrolersList = wrapper.message.deserialize()?;
+    let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILECONTROLERS)?;
+    let filtre = match requete.instance_id {
+        Some(inner) => doc!{"instance_id": inner},
+        None => doc!{"deleted": false}
+    };
+    let mut list = Vec::new();
+    let mut cursor = collection.find(filtre).await?;
+    while cursor.advance().await? {
+        let row = cursor.deserialize_current()?;
+        let item: RequeteFilehostItem = row.into();
+        list.push(item);
+    }
+    let collection_config = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let filtre = doc!{"name": FIELD_CONFIGURATION_FILECONTROLER_PRIMARY};
+    let filecontroler_primary = match collection_config.find_one(filtre).await? {
+        Some(inner) => Some(inner.value),
+        None => None
+    };
+
+    let response = RequeteFilecontrolersListResponse { ok: true, list, filecontroler_primary };
+    outbound.respond(wrapper.delivery_info, response).await
+}
+
+#[derive(Serialize, Deserialize)]
+struct FilehostForInstanceRequest {
+    instance_id: Option<String>,
+    filehost_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct RequestFilehostForInstanceResponse {
+    ok: bool,
+    filehost: RequeteFilehostItem,
 }
 
 async fn request_filehost_for_instance<M>(
@@ -426,15 +470,81 @@ async fn request_filehost_for_instance<M>(
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    let requete: FilehostForInstanceRequest = wrapper.message.deserialize()?;
+
+    let certificat = wrapper.certificate.as_ref();
+    let certificate_instance_id = if certificat.verifier_exchanges(vec![Securite::L1Public, Securite::L2Prive, Securite::L3Protege, Securite::L4Secure])? {
+        // Back-end component, use common name (instance_id)
+        certificat.get_common_name()?
+    } else {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+    };
+
+    let instance_id = requete.instance_id.unwrap_or_else(|| certificate_instance_id);
+
+    let collection_filehosts = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+
+    // Identify the filehost_id from the instance_id if possible
+    let filehost_id = match requete.filehost_id {
+        Some(inner) => Some(inner),  // Filehost provided
+        None => {
+            // Check if configuration overrides with filehost_id
+            let collection_instances =
+                mongo.get_collection_typed::<ServerInstanceConfigurationRow>(NOM_COLLECTION_INSTANCE_CONFIGURATION)?;
+            let filtre = doc! {"instance_id": &instance_id, "name": "filehost_id"};
+            debug!("Filehost loading filter (from instance_id): {:?}", filtre);
+            match collection_instances.find_one(filtre).await? {
+                Some(inner) => Some(inner.value),
+                None => {
+                    // Check if there is a filehost directly on this instance
+                    let filtre_filehosts = doc! {"instance_id": &instance_id, "deleted": false};
+                    debug!("Filehost loading from configured id: {:?}", filtre_filehosts);
+                    match collection_filehosts.find_one(filtre_filehosts).await? {
+                        Some(inner) => {
+                            return outbound.respond(wrapper.delivery_info, RequestFilehostForInstanceResponse { ok: true, filehost: inner.into() }).await
+                        },
+                        None => {
+                            // Load the default filehost_id
+                            let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+                            let filtre = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
+                            match collection_configuration.find_one(filtre).await? {
+                                Some(inner) => Some(inner.value),
+                                None => None
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    let filtre = match filehost_id.as_ref() {
+        Some(inner) => doc!{"filehost_id": inner, "deleted": false},
+        None => doc!{"deleted": false, "external_url": {"$exists": true}}  // Pick random with external_url if any available
+    };
+
+    debug!("Filehost loading filter: {:?}", filtre);
+    match collection_filehosts.find_one(filtre).await? {
+        Some(inner) => {
+            let filehost: RequeteFilehostItem = inner.into();
+            outbound.respond(wrapper.delivery_info, RequestFilehostForInstanceResponse { ok: true, filehost }).await
+        }
+        None => {
+            outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "No filehost available")).await
+        }
+    }
 }
 
-async fn request_filehost_for_external<M>(
-    mongo: &M,
-    outbound: &MessageOutboundFacade,
-    wrapper: MessageValidated,
-) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+#[derive(Serialize)]
+struct RequestDomainsBackupVersionItem {
+    domain: String,
+    version: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ResponseDomainsBackupVersion {
+    ok: bool,
+    domains: Vec<RequestDomainsBackupVersionItem>
 }
 
 async fn request_domains_backup_versions<M>(
@@ -442,5 +552,26 @@ async fn request_domains_backup_versions<M>(
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    let certificat = wrapper.certificate.as_ref();
+    if certificat.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        // Ok
+    } else {
+        if !certificat.verifier_exchanges(vec![Securite::L1Public])? {
+            return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+        }
+        if !certificat.verifier_roles_string(vec!["filecontroler".to_string()])? {
+            return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
+        }
+    }
+
+    let collection = mongo.get_collection_typed::<DomainRow>(COLLECTION_DOMAINS)?;
+    let mut cursor = collection.find(doc!{}).await?;
+    let mut list = Vec::new();
+    while let Some(row) = cursor.next().await {
+        let row = row?;
+        list.push(RequestDomainsBackupVersionItem {domain: row.domaine, version: row.backup_version});
+    }
+
+    let response = ResponseDomainsBackupVersion {ok: true, domains: list};
+    outbound.respond(wrapper.delivery_info, response).await
 }
