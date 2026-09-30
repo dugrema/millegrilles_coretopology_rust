@@ -26,7 +26,6 @@ pub const REQUETE_GET_FILECONTROLERS: &str = "getFilecontrolers";
 pub const REQUETE_GET_FILEHOST_FOR_EXTERNAL: &str = "getFilehostForExternal";
 pub const REQUETE_GET_DOMAINS_BACKUP_VERSIONS: &str = "getDomainBackupVersions";
 pub const REQUEST_SERVER_INSTANCES_V2: &str = "requestServerInstancesV2";
-pub const REQUEST_SERVER_INSTANCE_APPLICATIONS: &str = "requestServerInstanceApplications";
 pub const REQUEST_SERVER_INSTANCE_CONFIGURATION: &str = "requestServerInstanceConfiguration";
 pub const REQUEST_FILEHOSTS_FOR_FUUIDS: &str = "requestFilehostsForFuuids";
 
@@ -98,7 +97,6 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
             routing_keys: vec![
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_DOMAIN_LIST), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_SERVER_INSTANCES_V2), exchange: Securite::L3Protege },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_SERVER_INSTANCE_APPLICATIONS), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_SERVER_INSTANCE_CONFIGURATION), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_CLEID_BACKUP_DOMAINE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_CONFIGURATION_FILEHOSTS), exchange: Securite::L3Protege },

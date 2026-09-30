@@ -12,7 +12,7 @@ use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFaca
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::tokio_stream::StreamExt;
-use crate::models::{ApplicationStatusV2, DomainItemResponse, DomainRow, WebItem};
+use crate::models::*;
 
 pub async fn process_request<M>(
     mongo: &M,
@@ -28,9 +28,8 @@ pub async fn process_request<M>(
     match action {
         REQUEST_DOMAIN_LIST => request_domain_list(mongo, outbound, wrapper).await,
         REQUEST_SERVER_INSTANCES_V2 => request_deployed_userapps_v2(mongo, outbound, wrapper).await,
-        REQUEST_SERVER_INSTANCE_APPLICATIONS => todo!(),
-        REQUEST_SERVER_INSTANCE_CONFIGURATION => todo!(),
-        REQUETE_GET_CLEID_BACKUP_DOMAINE => todo!(),
+        REQUEST_SERVER_INSTANCE_CONFIGURATION => request_server_configuration(mongo, outbound, wrapper).await,
+        REQUETE_GET_CLEID_BACKUP_DOMAINE => request_get_domain_backup_keyid(mongo, outbound, wrapper).await,
         REQUETE_CONFIGURATION_FILEHOSTS => todo!(),
         REQUEST_FILEHOSTS_FOR_FUUIDS => todo!(),
         REQUETE_USERAPPS_DEPLOYEES_V2 => todo!(),
@@ -105,10 +104,6 @@ async fn request_deployed_userapps_v2<M>(
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     let certificate = wrapper.certificate.as_ref();
-    let user_name = certificate.get_common_name()?;
-    let extensions = certificate.extensions()?;
-    let exchanges = extensions.exchanges.as_ref();
-
     let is_admin = if certificate.verifier_exchanges(vec![Securite::L3Protege])? {
         true
     } else if certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
@@ -163,4 +158,90 @@ fn filter_applications_by_access(row: &mut ApplicationStatusV2, is_admin: bool) 
     row.applications = new_app_map;
 
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct RequestServerInstanceConfiguration { instance_id: String }
+
+#[derive(Serialize)]
+struct ResponseServerInstanceConfiguration {
+    ok: bool,
+    instance_id: String,
+    configuration: HashMap<String, String>,
+}
+
+async fn request_server_configuration<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    if wrapper.certificate.verifier_exchanges(vec!(Securite::L3Protege))? {
+        // Ok
+    } else if wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        // Ok
+    } else {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access refused")).await
+    }
+
+    let request: RequestServerInstanceConfiguration = wrapper.message.deserialize()?;
+
+    let collection = mongo.get_collection_typed::<ServerInstanceConfigurationRow>(NOM_COLLECTION_INSTANCE_CONFIGURATION)?;
+
+    let filtre = doc!{ "instance_id": &request.instance_id };
+    let mut cursor = collection.find(filtre).await?;
+    let mut configuration_items = HashMap::new();
+    while let Some(row) = cursor.next().await {
+        let row = row?;
+        configuration_items.insert(row.name, row.value);
+    }
+
+    let response = ResponseServerInstanceConfiguration {
+        ok: true,
+        instance_id: request.instance_id,
+        configuration: configuration_items
+    };
+    outbound.respond(wrapper.delivery_info, response).await
+}
+
+#[derive(Deserialize)]
+struct RequeteGetCleidBackupDomaine {
+    domaine: String,
+}
+
+#[derive(Serialize)]
+struct ResponseGetCleidBackupDomaine {
+    ok: bool,
+    cle_id: String,
+}
+
+
+async fn request_get_domain_backup_keyid<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    let requete: RequeteGetCleidBackupDomaine = wrapper.message.deserialize()?;
+    let domain = requete.domaine;
+
+    if !wrapper.certificate.verifier_exchanges(vec![Securite::L3Protege])? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "The process needs at least security level 3.protege")).await
+    } else if !wrapper.certificate.verifier_domaines(vec![domain.clone()])? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "The process to have a certificate of the same domain as requested")).await
+    }
+
+    let collection = mongo.get_collection_typed::<DomainRow>(COLLECTION_DOMAINS)?;
+    let domain_row = match collection.find_one(doc!{"domaine": &domain}).await? {
+        Some(domain_row) => domain_row,
+        None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "Unknown domain")).await
+    };
+
+    let cle_id = match domain_row.cle_id_backup {
+        Some(cle_id_backup) => cle_id_backup,
+        None => {
+            return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "No backup key for domain")).await
+        }
+    };
+
+    let response = ResponseGetCleidBackupDomaine { ok: true, cle_id };
+    outbound.respond(wrapper.delivery_info, response).await
 }

@@ -16,7 +16,8 @@ pub struct DomainRow {
     pub dirty: Option<bool>,
     pub reclame_fuuids: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub backup_version: Option<String>
+    pub backup_version: Option<String>,
+    pub cle_id_backup: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -29,9 +30,12 @@ pub struct DomainItemResponse {
     pub presence: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reclame_fuuids: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub backup_version: Option<String>
+    pub backup_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cle_id_backup: Option<String>,
 }
 
 impl From<DomainRow> for DomainItemResponse {
@@ -44,6 +48,7 @@ impl From<DomainRow> for DomainItemResponse {
             dirty: row.dirty,
             reclame_fuuids: row.reclame_fuuids,
             backup_version: row.backup_version,
+            cle_id_backup: row.cle_id_backup,
         }
     }
 }
@@ -78,4 +83,11 @@ pub struct ApplicationStatusV2 {
     pub securite: String,
     pub supprime: bool,
     pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ServerInstanceConfigurationRow {
+    pub instance_id: String,
+    pub name: String,
+    pub value: String,
 }
