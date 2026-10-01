@@ -5,16 +5,22 @@ use millegrilles_common_rust::chrono::{Datelike, Duration, Timelike, Utc, Weekda
 use millegrilles_common_rust::common_messages::BackupEvent;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::messages_generiques::MessageCedule;
+use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
 use millegrilles_common_rust::tracing::{debug, error, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
-use millegrilles_common_rust::v3::{BackupService, PresenceService};
+use millegrilles_common_rust::v3::{BackupService, ChiffrageService, ConfigService, PresenceService};
+use crate::fiche::produire_fiche_publique;
+use crate::flow::filecontroler::{entretien_transfert_fichiers, maintain_expired_filehost_visits, maintain_unclaimed_fuuids, regenerate_filehosting_fuuids};
 
-pub async fn process_ticker_job(
+pub async fn process_ticker_job<M>(
+    mongo: &M,
+    config: &dyn ConfigService,
+    chiffrage: &dyn ChiffrageService,
     outbound: &MessageOutboundFacade,
     backup: &dyn BackupService,
     trigger: MessageValidated
-) -> Result<(), CommonError> {
+) -> Result<(), CommonError> where M: MongoDaoTyped {
     // Ensure this is an authorized module
     if let Err(e) = validate_ticker(&trigger).await {
         error!("Invalid ticker message, rejecting: {}", e);
@@ -32,6 +38,47 @@ pub async fn process_ticker_job(
     // Emit domain presence
     if let Err(e) = outbound.emit_domain_presence(DOMAIN_NAME, None).await {
         warn!("Error emitting domain presence: {}", e);
+    }
+
+    if minute % 5 == 1
+    {
+        debug!("CoreTopology Produire fiche publique");
+        if let Err(e) = produire_fiche_publique(mongo, config, chiffrage, outbound).await {
+            error!("core_topoologie.produire_fiche_publique Erreur production fiche publique initiale : {:?}", e);
+        }
+    }
+
+
+    // Check every 3 minutes if claims/visits can be processed (low impact if no work).
+    if minute % 3 == 2
+    {
+        debug!("CoreTopology regenerate_filehosting_fuuids");
+        if let Err(e) = regenerate_filehosting_fuuids(mongo, outbound).await {
+            error!("core_topoologie.regenerate_filehosting_fuuids Error in maintenance of files claims and visits : {:?}", e);
+        }
+    }
+
+    // Maintain file transfers between filehosts
+    if minute % 15 == 6
+    {
+        debug!("CoreTopology entretien_transfert_fichiers");
+        if let Err(e) = entretien_transfert_fichiers(mongo, outbound).await {
+            error!("core_topologie.entretien_transfert_fichiers Erreur entretien transferts fichiers : {:?}", e);
+        }
+    }
+
+    if hour % 8 == 0 && minute == 29
+    // if minutes == 29
+    {
+        debug!("CoreTopology maintain_unclaimed_fuuids");
+        if let Err(e) = maintain_unclaimed_fuuids(mongo, outbound).await {
+            error!("core_topologie.maintain_unclaimed_fuuids Error maintaining unclaimed fuuids : {:?}", e);
+        }
+
+        debug!("CoreTopology maintain_expired_filehost_visits");
+        if let Err(e) = maintain_expired_filehost_visits(mongo).await {
+            error!("core_topologie.maintain_unclaimed_fuuids Error maintaining expired filehost visits : {:?}", e);
+        }
     }
 
     if minute % 30 == 4 {

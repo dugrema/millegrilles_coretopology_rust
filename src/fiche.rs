@@ -2,7 +2,7 @@ use crate::external::mongo::*;
 use crate::models::*;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::chrono::Utc;
-use millegrilles_common_rust::constantes::{CHAMP_MODIFICATION, SECURITE_2_PRIVE, Securite};
+use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error;
 use millegrilles_common_rust::fiche_systeme::{ApplicationsV2, FichePublique, InformationApplicationInstance, InformationInstance};
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
@@ -11,6 +11,30 @@ use millegrilles_common_rust::tracing::debug;
 use millegrilles_common_rust::v3::{ChiffrageService, ConfigService};
 use std::collections::HashMap;
 use std::time::Duration;
+use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
+use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
+use crate::constants::DOMAIN_NAME;
+use crate::external::mq::*;
+
+pub async fn produire_fiche_publique<M>(
+    mongo: &M,
+    config: &dyn ConfigService,
+    chiffrage: &dyn ChiffrageService,
+    outbound: &MessageOutboundFacade,
+) -> Result<(), Error> where M: MongoDaoTyped {
+    debug!("produire_fiche_publique");
+
+    let fiche = generer_contenu_fiche_publique(mongo, config, chiffrage).await?;
+
+    let routage = RoutageMessageAction::builder(
+        DOMAIN_NAME, EVENEMENT_FICHE_PUBLIQUE, vec![Securite::L1Public])
+        .ajouter_ca(true)
+        .build();
+
+    outbound.emit_event(routage, &fiche).await?;
+
+    Ok(())
+}
 
 pub async fn generer_contenu_fiche_publique<M>(mongo: &M, config: &dyn ConfigService, chiffrage: &dyn ChiffrageService) -> Result<FichePublique, Error>
 where

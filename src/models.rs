@@ -389,3 +389,11 @@ pub struct FilehostDeleteTransaction {
     pub filehost_id: String,
     pub reset_default: Option<bool>,
 }
+
+#[derive(Deserialize)]
+pub struct SyncStatusRow {
+    pub claimer: String,
+    pub claimer_type: String,
+    #[serde(default, with = "option_chrono_04_datetime")]
+    pub date_ready: Option<DateTime<Utc>>,
+}

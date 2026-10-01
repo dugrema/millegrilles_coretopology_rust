@@ -47,7 +47,6 @@ pub const FIELD_JOB_PICKED_UP: &str = "job_picked_up";
 
 pub async fn create_index_mongodb(db: &dyn MongoDao, config: &dyn ConfigMessages) -> Result<(), CommonError> {
     db.create_index(
-        config,
         COLLECTION_NAME_REDOLOG,
         vec!(
             ChampIndex { nom_champ: String::from(TRANSACTION_CHAMP_ID), direction: 1 },
@@ -59,7 +58,6 @@ pub async fn create_index_mongodb(db: &dyn MongoDao, config: &dyn ConfigMessages
     ).await?;
 
     db.create_index(
-        config,
         COLLECTION_NAME_REDOLOG,
         vec!(
             ChampIndex { nom_champ: String::from(FIELD_PROCESSED), direction: 1 },
@@ -71,7 +69,6 @@ pub async fn create_index_mongodb(db: &dyn MongoDao, config: &dyn ConfigMessages
     ).await?;
 
     db.create_index(
-        config,
         COLLECTION_NAME_TRACKING,
         vec!(
             ChampIndex { nom_champ: String::from(FIELD_BID), direction: 1 },
@@ -83,7 +80,6 @@ pub async fn create_index_mongodb(db: &dyn MongoDao, config: &dyn ConfigMessages
     ).await?;
 
     db.create_index(
-        config,
         COLLECTION_NAME_TRACKING,
         vec!(
             ChampIndex { nom_champ: String::from(FIELD_DATE_PROCESSED), direction: 1 },
