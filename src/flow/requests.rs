@@ -644,7 +644,8 @@ async fn request_configuration_get_files<M>(
 
 #[derive(Deserialize)]
 struct RequestConfigurationGetProperties {
-    filename: String,
+    file_id: Option<String>,
+    filename: Option<String>,
     /// Target specific property keys
     keys: Option<Vec<String>>,
     /// When true, sends the secret key for this file (must be admin)
@@ -688,7 +689,15 @@ async fn request_configuration_get_properties<M>(
     }
 
     let collection_file = mongo.get_collection_typed::<ConfigurationFileRow>(COLLECTION_CONFIGURATION_FILES)?;
-    let file = match collection_file.find_one(doc!{"filename": request.filename}).await? {
+    let file_filter = match request.file_id.as_ref() {
+        Some(file_id) => doc!{"file_id": file_id},
+        None => match request.filename {
+            Some(filename) => doc!{"filename": filename},
+            None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(400, "No file_id or filename provided")).await
+        }
+    };
+    
+    let file = match collection_file.find_one(file_filter).await? {
         Some(file) => file,
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
     };
