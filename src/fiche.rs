@@ -61,7 +61,7 @@ where
     let presence_expiree = Utc::now() - Duration::from_secs(3600);
 
     // Fetch and Map Instances (ManagerStatusV2)
-    let instance_collection = mongo.get_collection_typed::<ManagerStatusV2>(NOM_COLLECTION_INSTANCE_STATUS_V2)?;
+    let instance_collection = mongo.get_collection_typed::<ManagerStatusV2>(COLLECTION_INSTANCE_STATUS_V2)?;
     let instance_filter = doc!{
         "securite": {"$ne": Securite::L4Secure.get_str()},
         CHAMP_MODIFICATION: {"$gte": presence_expiree},

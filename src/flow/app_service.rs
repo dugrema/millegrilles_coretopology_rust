@@ -19,7 +19,6 @@ use millegrilles_common_rust::tracing::{debug, error, info};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageInboundValidator;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::impls::backup_restorer::RestorationState;
-use millegrilles_common_rust::v3::impls::config_service::ConfigServiceDbImpl;
 use millegrilles_common_rust::v3::impls::messaging_service::MessagingServiceImpl;
 use millegrilles_common_rust::v3::{BackupService, ChiffrageService, ConfigService};
 use std::sync::Arc;
@@ -53,9 +52,9 @@ impl ApplicationService {
         }
     }
 
-    pub async fn configure(&self, mq: &MessagingServiceImpl, config: &ConfigServiceDbImpl) -> Result<(), CommonError> {
+    pub async fn configure(&self, mq: &MessagingServiceImpl) -> Result<(), CommonError> {
         init_queues(mq)?;
-        create_index_mongodb(self.mongo.as_ref(), config.config.as_ref()).await?;
+        create_index_mongodb(self.mongo.as_ref()).await?;
         Ok(())
     }
 

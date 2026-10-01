@@ -393,6 +393,7 @@ pub struct FilehostDeleteTransaction {
 #[derive(Deserialize)]
 pub struct SyncStatusRow {
     pub claimer: String,
+    #[allow(dead_code)]
     pub claimer_type: String,
     #[serde(default, with = "option_chrono_04_datetime")]
     pub date_ready: Option<DateTime<Utc>>,

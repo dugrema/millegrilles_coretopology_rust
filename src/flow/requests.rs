@@ -188,7 +188,7 @@ async fn request_server_configuration<M>(
 
     let request: RequestServerInstanceConfiguration = wrapper.message.deserialize()?;
 
-    let collection = mongo.get_collection_typed::<ServerInstanceConfigurationRow>(NOM_COLLECTION_INSTANCE_CONFIGURATION)?;
+    let collection = mongo.get_collection_typed::<ServerInstanceConfigurationRow>(COLLECTION_INSTANCE_CONFIGURATION)?;
 
     let filtre = doc!{ "instance_id": &request.instance_id };
     let mut cursor = collection.find(filtre).await?;
@@ -295,7 +295,7 @@ async fn request_filehosts_for_fuuid<M>(
 
     let request: RequestFilehostsForFuuids = wrapper.message.deserialize()?;
     let collection =
-        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+        mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
     let filtre = doc!{"fuuid": {"$in": &request.fuuids}};
     let mut cursor = collection.find(filtre).await?;
     let mut response_list = Vec::new();
@@ -342,7 +342,7 @@ async fn request_server_instances<M>(
         Some(inner) => doc!{"instance_id": inner},
         None => doc!{}
     };
-    let collection = mongo.get_collection_typed::<ManagerStatusV2>(NOM_COLLECTION_INSTANCE_STATUS_V2)?;
+    let collection = mongo.get_collection_typed::<ManagerStatusV2>(COLLECTION_INSTANCE_STATUS_V2)?;
     let mut results = vec![];
     let mut cursor = collection.find(filtre).await?;
     while let Some(row) = cursor.next().await {
@@ -393,7 +393,7 @@ async fn request_filehosts<M>(
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     let requete: RequestFilehostList = wrapper.message.deserialize()?;
-    let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
 
     let filtre = match requete.filehost_id {
         Some(inner) => doc!{"filehost_id": inner},
@@ -482,7 +482,7 @@ async fn request_filehost_for_instance<M>(
 
     let instance_id = requete.instance_id.unwrap_or_else(|| certificate_instance_id);
 
-    let collection_filehosts = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+    let collection_filehosts = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
 
     // Identify the filehost_id from the instance_id if possible
     let filehost_id = match requete.filehost_id {
@@ -490,7 +490,7 @@ async fn request_filehost_for_instance<M>(
         None => {
             // Check if configuration overrides with filehost_id
             let collection_instances =
-                mongo.get_collection_typed::<ServerInstanceConfigurationRow>(NOM_COLLECTION_INSTANCE_CONFIGURATION)?;
+                mongo.get_collection_typed::<ServerInstanceConfigurationRow>(COLLECTION_INSTANCE_CONFIGURATION)?;
             let filtre = doc! {"instance_id": &instance_id, "name": "filehost_id"};
             debug!("Filehost loading filter (from instance_id): {:?}", filtre);
             match collection_instances.find_one(filtre).await? {

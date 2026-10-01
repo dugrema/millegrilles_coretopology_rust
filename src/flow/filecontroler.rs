@@ -12,10 +12,9 @@ use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::mongo_dao::{ChampIndex, IndexOptions, MongoDaoTyped};
 use millegrilles_common_rust::mongo_serde::option_chrono_04_datetime;
 use millegrilles_common_rust::mongodb::ClientSession;
-use millegrilles_common_rust::mongodb::options::{AggregateOptions, Hint};
+use millegrilles_common_rust::mongodb::options::Hint;
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
 use millegrilles_common_rust::tracing::{debug, error, info, warn};
-use millegrilles_common_rust::v3::ConfigService;
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
@@ -59,7 +58,7 @@ async fn filehost_usage<M>(
         },
         "$currentDate": {"modified": true}
     };
-    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTS)?;
     let result = collection.update_one(filtre, ops).await?;
 
     if result.matched_count == 0 {
@@ -102,7 +101,7 @@ async fn filehost_newfuuid<M>(
             format!("filehost.{}", &row.filehost_id): &row.visit_time,
         }
     };
-    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTING_FUUIDS)?;
     collection
         .update_one(filtre, ops)
         .upsert(true)
@@ -157,13 +156,13 @@ async fn process_transfers<M>(
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     // Supprimer le transfert vers ce filehost (si applicable)
     let filtre_transfer = doc!{"fuuid": fuuid, "destination_filehost_id": filehost_id};
-    let collection_transfers = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+    let collection_transfers = mongo.get_collection(COLLECTION_FILEHOSTING_TRANSFERS)?;
     collection_transfers.delete_one(filtre_transfer).await?;
 
     // Creer les transferts vers filehosts sans ce fuuid
 
     // Recuperer liste de filehost_ids actifs
-    let collection_filehosts = mongo.get_collection_typed::<RowFilehostId>(NOM_COLLECTION_FILEHOSTS)?;
+    let collection_filehosts = mongo.get_collection_typed::<RowFilehostId>(COLLECTION_FILEHOSTS)?;
     let filtre = doc! { "deleted": false, "sync_active": true };
     let mut curseur = collection_filehosts
         .find(filtre)
@@ -175,7 +174,7 @@ async fn process_transfers<M>(
         filehost_ids.insert(row.filehost_id);
     }
 
-    let collection_fuuids = mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let collection_fuuids = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
     let fuuid_info = collection_fuuids.find_one(doc!{"fuuid": fuuid}).await?;
     if let Some(row) = fuuid_info {
         if let Some(visits) = row.filehost {
@@ -226,7 +225,9 @@ async fn emit_filehost_transfersupdated_event(outbound: &MessageOutboundFacade) 
 struct FuuidFilehostRow {
     #[serde(rename="_id")]
     id: ObjectId,
+    #[allow(dead_code)]
     fuuid: String,
+    #[allow(dead_code)]
     destination_filehost_id: String,
 }
 
@@ -239,7 +240,7 @@ pub async fn entretien_transfert_fichiers<M>(
 
     let (filehosts_active, filehosts_inactive) = {
         let collection_filehosts =
-            mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+            mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
         let filtre = doc!{};
         let mut cursor = collection_filehosts.find(filtre).await?;
 
@@ -258,7 +259,7 @@ pub async fn entretien_transfert_fichiers<M>(
 
     // Remove all transfers going to currently inactive filehosts
     let collection_transfers =
-        mongo.get_collection_typed::<FilehostTransfer>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+        mongo.get_collection_typed::<FilehostTransfer>(COLLECTION_FILEHOSTING_TRANSFERS)?;
     if filehosts_inactive.len() > 0 {
         debug!("entretien_transfert_fichiers {} filehosts inactifs", filehosts_inactive.len());
         let filehost_ids: Vec<&String> = filehosts_inactive.keys().into_iter().collect();
@@ -272,7 +273,7 @@ pub async fn entretien_transfert_fichiers<M>(
     // Check each transfer to ensure it is still required
     let active_transfer_pipeline = vec![
         doc!{"$lookup": {
-            "from": NOM_COLLECTION_FILEHOSTING_FUUIDS,
+            "from": COLLECTION_FILEHOSTING_FUUIDS,
             "localField": "fuuid",
             "foreignField": "fuuid",
             "as": "visits",
@@ -366,14 +367,14 @@ pub async fn entretien_transfert_fichiers<M>(
             doc!{"$unset": "_id"},
             // doc!{"$out": {"db": middleware.get_database()?.name(), "coll": "CoreTopologie/transfer_test"}},
             doc!{"$merge": {
-                "into": NOM_COLLECTION_FILEHOSTING_TRANSFERS,
+                "into": COLLECTION_FILEHOSTING_TRANSFERS,
                 "on": ["destination_filehost_id", "fuuid"],
                 "whenMatched": "keepExisting",
                 "whenNotMatched": "insert",
             }}
         ];
         let collection_transfers =
-            mongo.get_collection(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+            mongo.get_collection(COLLECTION_FILEHOSTING_FUUIDS)?;
         debug!("Creating missing transfer items START");
         collection_transfers.aggregate(fuuids_pipeline).await?;
         debug!("Creating missing transfer items DONE");
@@ -394,7 +395,7 @@ pub async fn add_missing_file_transfers<M>(
     // Get active filehosts
     let filehosts_active = {
         let collection_filehosts =
-            mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+            mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
         let filtre = doc!{"sync_active": true, "deleted": false};
         let mut cursor = collection_filehosts.find(filtre).await?;
 
@@ -438,7 +439,7 @@ pub async fn add_missing_file_transfers<M>(
         }
         if ! transfers_to_add.is_empty() {
             let collection_transfers =
-                mongo.get_collection_typed::<FilehostTransfer>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+                mongo.get_collection_typed::<FilehostTransfer>(COLLECTION_FILEHOSTING_TRANSFERS)?;
             collection_transfers.insert_many(transfers_to_add).session(&mut *session).await?;
         }
     }
@@ -476,7 +477,7 @@ async fn merge_filehosting_fuuids_claims<M>(
         let mut count = 0;
         let mut claimer_domains = Vec::new();
 
-        let collection_status = mongo.get_collection_typed::<SyncStatusRow>(NOM_COLLECTION_FILEHOSTING_SYNC_STATUS)?;
+        let collection_status = mongo.get_collection_typed::<SyncStatusRow>(COLLECTION_FILEHOSTING_SYNC_STATUS)?;
         let claimers_filtre = doc!{"claimer_type": "domain"};
         let mut cursor = collection_status.find(claimers_filtre.clone()).await?;
 
@@ -520,7 +521,7 @@ async fn merge_filehosting_fuuids_claims<M>(
         doc!{"$set": {"fuuid": "$_id"}},  // Copy field claim_date to last_claim_date (merge value)
         doc!{"$unset": ["_id"]},          // Remove _id field for merge
         doc!{"$merge": {
-            "into": NOM_COLLECTION_FILEHOSTING_FUUIDS,
+            "into": COLLECTION_FILEHOSTING_FUUIDS,
             "on": "fuuid",
             "whenNotMatched": "insert",
         }}
@@ -567,7 +568,7 @@ async fn respond_to_file_claims<M>(
             doc!{"$group": {"_id": "$fuuid"}},
             doc!{"$lookup": {
                 // Lookup the rep table to get the user ids.
-                "from": NOM_COLLECTION_FILEHOSTING_FUUIDS,
+                "from": COLLECTION_FILEHOSTING_FUUIDS,
                 "localField": "_id",
                 "foreignField": "fuuid",
                 "as": "visits",
@@ -655,7 +656,7 @@ async fn respond_to_file_claims<M>(
 async fn merge_filehosting_fuuids_visits<M>(mongo: &M) -> Result<(), CommonError> where M: MongoDaoTyped {
     // Make a list of active fileshosts. Ignore deleted/no sync filehosts.
     let mut active_filehost_ids = HashSet::new();
-    let collection_filehosts = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+    let collection_filehosts = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
     let filtre = doc!{"deleted": false, "sync_active": true};
     let mut cursor = collection_filehosts.find(filtre).await?;
     while cursor.advance().await? {
@@ -664,7 +665,7 @@ async fn merge_filehosting_fuuids_visits<M>(mongo: &M) -> Result<(), CommonError
     }
 
     // Ensure that all claimer components have sent their data
-    let collection_status = mongo.get_collection_typed::<SyncStatusRow>(NOM_COLLECTION_FILEHOSTING_SYNC_STATUS)?;
+    let collection_status = mongo.get_collection_typed::<SyncStatusRow>(COLLECTION_FILEHOSTING_SYNC_STATUS)?;
     let claimers_filtre = doc! {"claimer_type": "filehost"};
     let mut count = 0;
     let mut cursor = collection_status.find(claimers_filtre.clone()).await?;
@@ -711,7 +712,7 @@ async fn merge_filehosting_fuuids_visits<M>(mongo: &M) -> Result<(), CommonError
 
         // Lookup existing visits to keep information from filehosts not being updated
         doc!{"$lookup": {
-            "from": NOM_COLLECTION_FILEHOSTING_FUUIDS,
+            "from": COLLECTION_FILEHOSTING_FUUIDS,
             "localField": "fuuid",
             "foreignField": "fuuid",
             "as": "visits",
@@ -723,7 +724,7 @@ async fn merge_filehosting_fuuids_visits<M>(mongo: &M) -> Result<(), CommonError
         doc!{"$unset": ["_id", "items", "visits", "visit_entry", "filehost_updated"]},
         doc!{"$merge": {
             // "into": NOM_COLLECTION_FILEHOSTING_FUUIDS_WORK,
-            "into": NOM_COLLECTION_FILEHOSTING_FUUIDS,
+            "into": COLLECTION_FILEHOSTING_FUUIDS,
             "on": "fuuid",
             "whenNotMatched": "insert",
         }}
@@ -765,7 +766,7 @@ pub async fn maintain_unclaimed_fuuids<M>(
     info!("maintain_unclaimed_fuuids START");
 
     let collection_fuuids =
-        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+        mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
 
     // Set the unclaim_check timestamp to expired claims
     let now = Utc::now();
@@ -876,6 +877,7 @@ pub async fn maintain_unclaimed_fuuids<M>(
 #[derive(Deserialize)]
 struct ObjectToArrayKeyStringValueDate {
     k: String,
+    #[allow(dead_code)]
     #[serde(default, with = "option_chrono_04_datetime")]
     v: Option<DateTime<Utc>>
 }
@@ -899,7 +901,7 @@ pub async fn maintain_expired_filehost_visits<M>(
         doc!{"$unwind": {"path": "$filehost_elem"}},
         doc!{"$match": {"filehost_elem.v": {"$lt": expired_visit}}},
     ];
-    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTING_FUUIDS)?;
     let mut cursor = collection.aggregate(pipeline).await?;
     while cursor.advance().await? {
         let row = cursor.deserialize_current()?;

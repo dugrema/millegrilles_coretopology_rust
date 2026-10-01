@@ -146,7 +146,7 @@ async fn event_presence_instance(
         "$currentDate": {CHAMP_MODIFICATION: true}
     };
 
-    let collection = mongo.get_collection(NOM_COLLECTION_INSTANCE_STATUS_V2)?;
+    let collection = mongo.get_collection(COLLECTION_INSTANCE_STATUS_V2)?;
     collection.update_one(filter, ops).upsert(true).await?;
 
     Ok(())

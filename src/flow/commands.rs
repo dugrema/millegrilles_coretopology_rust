@@ -134,7 +134,7 @@ async fn claim_filehost_visits_for_fuuids<M>(
     let mut new_claims_fuuids: Vec<RowFilehostFuuid> = Vec::new();
 
     let filtre = doc! {"fuuid": {"$in": &requete.fuuids}};
-    let collection = mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let collection = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
     let mut curseur = collection.find(filtre).await?;
     while let Some(row) = curseur.next().await {
         let row = row?;
@@ -170,7 +170,7 @@ async fn claim_filehost_visits_for_fuuids<M>(
     }
 
     // Conserver les reclamations.
-    let collection_claims = mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+    let collection_claims = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
     let filtre_reclamations = doc!{ "fuuid": {"$in": &requete.fuuids} };
     let ops_reclamations = doc! {"$currentDate": {FIELD_LAST_CLAIM_DATE: true}};
     let update_result = collection_claims.update_many(filtre_reclamations.clone(), ops_reclamations).await?;
@@ -193,7 +193,7 @@ async fn claim_filehost_visits_for_fuuids<M>(
                 rows.push(row);
             }
             let collection_insert_claims =
-                mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+                mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
             collection_insert_claims.insert_many(rows).await?;
         }
     }
@@ -223,9 +223,9 @@ async fn filehost_reset_visits_claims<M>(
     }
 
     let collection_fuuids =
-        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+        mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
     let collection_transfers =
-        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+        mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_TRANSFERS)?;
 
     collection_fuuids.delete_many(doc!{}).await?;
     collection_transfers.delete_many(doc!{}).await?;
@@ -249,7 +249,7 @@ async fn filehost_reset_transfers<M>(
 
     // Retirer le champ job_picked_up pour permettre aux controleurs de reprendre les jobs immediatement
     let collection_transfers =
-        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+        mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_TRANSFERS)?;
     let filtre = doc!{"job_picked_up": {"$exists":true}};
     let ops = doc! {"$unset": {"job_picked_up": true}, "$currentDate": {"modified": true}};
     collection_transfers.update_many(filtre, ops).await?;
@@ -325,7 +325,7 @@ async fn domain_claim_files<M>(
 
     if request.done == Some(true) {
         // Put flag to indicate this domain has sent all its claims successfully
-        let collection_files_status = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_SYNC_STATUS)?;
+        let collection_files_status = mongo.get_collection(COLLECTION_FILEHOSTING_SYNC_STATUS)?;
         if let Some(domains) = &domains {
             if let Some(domains_list) = domains {
                 for domain in domains_list {
@@ -380,7 +380,7 @@ async fn file_visit<M>(
 
     if commande.done == Some(true) {
         // Put flag to indicate this filehost_id has sent all its visits successfully
-        let collection_files_status = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_SYNC_STATUS)?;
+        let collection_files_status = mongo.get_collection(COLLECTION_FILEHOSTING_SYNC_STATUS)?;
         let filtre = doc!{"claimer": filehost_id, "claimer_type": "filehost"};
         let ops = doc! {
             "$currentDate": {"date_ready": true},
@@ -422,7 +422,7 @@ async fn filehost_batch_transfers<M>(
     let batch_limit = commande.batch_size.unwrap_or_else(|| 10);
 
     let collection_transfers =
-        mongo.get_collection_typed::<FilehostTransfer>(NOM_COLLECTION_FILEHOSTING_TRANSFERS)?;
+        mongo.get_collection_typed::<FilehostTransfer>(COLLECTION_FILEHOSTING_TRANSFERS)?;
 
     // Recuperer les nouveaux transferts en premier (job_picked_up = null)
     let filtre = doc!{
@@ -482,7 +482,7 @@ async fn parse_filehost_visits<M>(
     mut curseur: Cursor<FilehostTransfer>
 ) -> Result<Vec<CommandBatchTransfersResponseFuuid>, CommonError> where M: MongoDaoTyped {
     let collection_fuuids =
-        mongo.get_collection_typed::<RowFilehostFuuid>(NOM_COLLECTION_FILEHOSTING_FUUIDS)?;
+        mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
 
     let mut fuuids_list = Vec::new();
 
@@ -659,7 +659,7 @@ async fn add_filehost_v2<M>(
         if let Some(instance_id) = transaction_value.instance_id.as_ref() {
             // This is a file controler trying to automatically add a local file host.
             // Ensure that no file host exists (including deleted ones) for the instance_id that is being used.
-            let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+            let collection = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
             let filtre = doc!{"instance_id": instance_id};
             match collection.find_one(filtre).await? {
                 Some(filehost_row) => {
@@ -676,7 +676,7 @@ async fn add_filehost_v2<M>(
         if let Some(url_external) = transaction_value.url_external.as_ref() {
             // Admin adding an external file host.
             // Ensure no file host exists for this url.
-            let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+            let collection = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
             let filtre = doc!{"url_external": url_external};
             match collection.find_one(filtre).await? {
                 Some(filehost_row) => {
@@ -705,7 +705,7 @@ async fn add_filehost_v2<M>(
 
     // Load the new filehost, emit as event
     let filtre = doc!{"filehost_id": &message_id};
-    let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
     match collection.find_one(filtre).await? {
         Some(inner) => {
             let routing = RoutageMessageAction::builder(DOMAINE_TOPOLOGIE, "filehostAdd", vec![Securite::L1Public])
@@ -740,7 +740,7 @@ async fn check_restore_existing_filehost<M>(
 
         // Load the new filehost, emit as event
         let filtre = doc! {"filehost_id": &row.filehost_id};
-        let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+        let collection = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
         match collection.find_one(filtre).await? {
             Some(inner) => {
                 let filehost_item: RequeteFilehostItem = inner.into();
@@ -814,7 +814,7 @@ async fn update_filehost<M>(
         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
     }
 
-    let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
     let filtre = doc! {"filehost_id": doc_transaction.filehost_id};
 
     // Check that the message exists
@@ -891,7 +891,7 @@ async fn delete_filehost<M>(
 
     let filehost_id = transaction_value.filehost_id.clone();
     // Check that filehost exists and is not deleted (flag).
-    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTS)?;
     let filtre = doc!{"filehost_id": &filehost_id, "deleted": false};
     let result = collection.find_one(filtre).await?;
     if result.is_none() {

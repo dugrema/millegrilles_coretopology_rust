@@ -93,7 +93,7 @@ async fn set_filehost_for_instance(
         "$set": set_ops,
         "$currentDate": {CHAMP_MODIFICATION: true}
     };
-    let collection = mongo.get_collection(NOM_COLLECTION_INSTANCE_CONFIGURATION)?;
+    let collection = mongo.get_collection(COLLECTION_INSTANCE_CONFIGURATION)?;
 
     let update_model_versions = WriteModel::UpdateOne(
         UpdateOneModel::builder()
@@ -171,7 +171,7 @@ async fn add_filehost_v2<M>(
     let transaction_value: FilehostAddTransactionV2 = wrapper.message.deserialize()?;
     let transaction_id = &wrapper.message.id.as_str();
 
-    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTS)?;
     let now = Utc::now();
 
     let set_ops = doc! {
@@ -214,7 +214,7 @@ async fn update_filehost<M>(
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
     let doc_transaction: FilehostUpdateTransaction = wrapper.message.deserialize()?;
 
-    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTS)?;
     let filter = doc! {"filehost_id": doc_transaction.filehost_id};
     let mut set_ops = doc!{};
     if let Some(inner) = doc_transaction.instance_id {
@@ -256,7 +256,7 @@ async fn delete_filehost<M>(
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
     let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
 
-    let collection = mongo.get_collection(NOM_COLLECTION_FILEHOSTS)?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTS)?;
     let filter = doc!{"filehost_id": &transaction_value.filehost_id };
     let ops = doc !{
         "$set": {"deleted": true},
