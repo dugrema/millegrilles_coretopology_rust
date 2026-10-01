@@ -1,7 +1,7 @@
 use crate::external::mongo::*;
 use crate::external::mq::*;
 use crate::models::*;
-use millegrilles_common_rust::bson;
+use millegrilles_common_rust::{bson, serde_json};
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::certificats::VerificateurPermissions;
 use millegrilles_common_rust::chrono::Utc;
@@ -25,7 +25,6 @@ pub async fn process_presence_event(
         EVENEMENT_PRESENCE_DOMAINE => event_presence_domain(mongo, wrapper).await,
         EVENEMENT_PRESENCE_INSTANCE_V2 => event_presence_instance(mongo, wrapper).await,
         EVENEMENT_PRESENCE_INSTANCE_APPLICATIONS_V2 => event_presence_applications(mongo, wrapper).await,
-
         _ => {
             info!("Unknown action {} for process_command, skipping", action);
             Ok(())
@@ -87,6 +86,7 @@ async fn event_presence_instance(
     mongo: &dyn MongoDao,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> {
+    // debug!("event_presence_instance\n{}", serde_json::to_string(&wrapper.message)?);
     let event: PresenceInstanceEventV2 = wrapper.message.deserialize()?;
     if ! wrapper.certificate.verifier_roles(vec![RolesCertificats::Instance])? {
         warn!("process_presence_instance_v2 Rejecting message not from an instance manager");
