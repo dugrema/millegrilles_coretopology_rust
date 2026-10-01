@@ -87,7 +87,7 @@ async fn filehost_newfuuid<M>(
     let command: EventNewFuuid = wrapper.message.deserialize()?;
 
     // Add filehost_id/fuuid to the visit aggregation table
-    let collection_visits = mongo.get_collection_typed::<FilehostingVisitRow>(NOM_COLLECTION_FILEHOSTING_VISITS)?;
+    let collection_visits = mongo.get_collection_typed::<FilehostingVisitRow>(COLLECTION_FILEHOSTING_VISITS)?;
     let row = FilehostingVisitRow {
         fuuid: command.fuuid,
         filehost_id: command.filehost_id,
@@ -124,7 +124,7 @@ pub async fn check_primary_filecontroler<M>(
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     // Check if a primary filecontroler exists
     let filtre = doc!{"name": FIELD_CONFIGURATION_FILECONTROLER_PRIMARY};
-    let collection = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let collection = mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
     let result = collection
         .find_one(filtre)
         .await?;
@@ -506,8 +506,8 @@ async fn merge_filehosting_fuuids_claims<M>(
 
     // Rename the collections
     // If any WORK tables exist, drop them
-    let claims_work_name = format!("{}_WORK", NOM_COLLECTION_FILEHOSTING_CLAIMS);
-    mongo.rename_collection(NOM_COLLECTION_FILEHOSTING_CLAIMS, &claims_work_name, true).await?;
+    let claims_work_name = format!("{}_WORK", COLLECTION_FILEHOSTING_CLAIMS);
+    mongo.rename_collection(COLLECTION_FILEHOSTING_CLAIMS, &claims_work_name, true).await?;
 
     // Prepare the collection indexes by fuuid
     let options_index = IndexOptions { nom_index: Some(String::from("fuuids")), unique: false};
@@ -693,8 +693,8 @@ async fn merge_filehosting_fuuids_visits<M>(mongo: &M) -> Result<(), CommonError
 
     // Rename the collections
     // If any WORK tables exist, drop them
-    let visits_work_name = format!("{}_WORK", NOM_COLLECTION_FILEHOSTING_VISITS);
-    mongo.rename_collection(NOM_COLLECTION_FILEHOSTING_VISITS, &visits_work_name, true).await?;
+    let visits_work_name = format!("{}_WORK", COLLECTION_FILEHOSTING_VISITS);
+    mongo.rename_collection(COLLECTION_FILEHOSTING_VISITS, &visits_work_name, true).await?;
 
     // Prepare the collection indexes by fuuid
     let options_index = IndexOptions { nom_index: Some(String::from("fuuids")), unique: false};

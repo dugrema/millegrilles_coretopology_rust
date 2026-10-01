@@ -164,7 +164,7 @@ async fn claim_filehost_visits_for_fuuids<M>(
             for fuuid in &fuuids_requis {
                 batch.push(doc! {"fuuid": *fuuid, "claim_date": &now, "domains": &domains})
             }
-            let collection_agg_claim = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_CLAIMS)?;
+            let collection_agg_claim = mongo.get_collection(COLLECTION_FILEHOSTING_CLAIMS)?;
             collection_agg_claim.insert_many(batch).await?;
         }
     }
@@ -319,7 +319,7 @@ async fn domain_claim_files<M>(
         batch.push(doc!{"fuuid": fuuid, "claim_date": &now, "domains": &domains});
     }
     if ! batch.is_empty() {
-        let collection_claims = mongo.get_collection(NOM_COLLECTION_FILEHOSTING_CLAIMS)?;
+        let collection_claims = mongo.get_collection(COLLECTION_FILEHOSTING_CLAIMS)?;
         collection_claims.insert_many(batch).await?;
     }
 
@@ -374,7 +374,7 @@ async fn file_visit<M>(
         });
     }
     if ! batch.is_empty() {
-        let collection_visits = mongo.get_collection_typed::<FilehostingVisitRow>(NOM_COLLECTION_FILEHOSTING_VISITS)?;
+        let collection_visits = mongo.get_collection_typed::<FilehostingVisitRow>(COLLECTION_FILEHOSTING_VISITS)?;
         collection_visits.insert_many(batch).await?;
     }
 
@@ -575,7 +575,7 @@ async fn set_filehost_default<M>(
 
     // Verifier que la valeur n'est pas la meme
     let collection_config =
-        mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+        mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
     let filtre = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
     if let Some(entry) = collection_config.find_one(filtre).await? {
         if entry.value.as_str() == transaction_value.filehost_id.as_str() {
@@ -771,7 +771,7 @@ async fn check_default_filehost<M>(mongo: &M, filehost_id: &str) -> Result<(), C
 where M: MongoDaoTyped
 {
     let filtre = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
-    let collection = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let collection = mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
     let result = collection.find_one(filtre).await?;
     if result.is_none() {
         info!("Initialize default filehost to {}", filehost_id);
@@ -901,7 +901,7 @@ async fn delete_filehost<M>(
     let delivery_info = wrapper.delivery_info.clone();
 
     // Process transaction, check to delete default filehost configuration item if matches filehost_id
-    let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
     let filtre_configuration = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT, "value": &filehost_id};
     match collection_configuration.find_one(filtre_configuration).await? {
         Some(_config) => {

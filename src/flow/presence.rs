@@ -1,7 +1,7 @@
 use crate::external::mongo::*;
 use crate::external::mq::*;
 use crate::models::*;
-use millegrilles_common_rust::{bson, serde_json};
+use millegrilles_common_rust::bson;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::certificats::VerificateurPermissions;
 use millegrilles_common_rust::chrono::Utc;

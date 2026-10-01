@@ -263,7 +263,7 @@ async fn request_filehost_configuration<M>(
         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
     }
 
-    let collection_config = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let collection_config = mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
     let mut curseur = collection_config.find(doc!{}).await?;
 
     let mut configuration = HashMap::new();
@@ -430,7 +430,7 @@ async fn request_filecontrolers<M>(
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     let requete: RequestFilecontrolersList = wrapper.message.deserialize()?;
-    let collection = mongo.get_collection_typed::<FilehostServerRow>(NOM_COLLECTION_FILECONTROLERS)?;
+    let collection = mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILECONTROLERS)?;
     let filtre = match requete.instance_id {
         Some(inner) => doc!{"instance_id": inner},
         None => doc!{"deleted": false}
@@ -442,7 +442,7 @@ async fn request_filecontrolers<M>(
         let item: RequeteFilehostItem = row.into();
         list.push(item);
     }
-    let collection_config = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+    let collection_config = mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
     let filtre = doc!{"name": FIELD_CONFIGURATION_FILECONTROLER_PRIMARY};
     let filecontroler_primary = match collection_config.find_one(filtre).await? {
         Some(inner) => Some(inner.value),
@@ -505,7 +505,7 @@ async fn request_filehost_for_instance<M>(
                         },
                         None => {
                             // Load the default filehost_id
-                            let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+                            let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
                             let filtre = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
                             match collection_configuration.find_one(filtre).await? {
                                 Some(inner) => Some(inner.value),

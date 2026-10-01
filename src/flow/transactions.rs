@@ -121,7 +121,7 @@ async fn set_filehost_default<M>(
     let transaction_value: TransactionFilehostSetDefault = wrapper.message.deserialize()?;
 
     let collection_config =
-        mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+        mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
     let filter = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT};
     let ops = doc! {
         "$set": {"value": transaction_value.filehost_id},
@@ -274,7 +274,7 @@ async fn delete_filehost<M>(
 
     if transaction_value.reset_default == Some(true) {
         // Additional operation to remove the default filehost configuration
-        let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(NOM_COLLECTION_FILEHOSTINGCONFIGURATION)?;
+        let collection_configuration = mongo.get_collection_typed::<FilehostingCongurationRow>(COLLECTION_FILEHOSTINGCONFIGURATION)?;
         let filtre_configuration = doc!{"name": FIELD_CONFIGURATION_FILEHOST_DEFAULT, "value": &transaction_value.filehost_id};
         let delete_model_versions = WriteModel::DeleteOne(
             DeleteOneModel::builder()
