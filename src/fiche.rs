@@ -101,7 +101,7 @@ where
     };
 
     // Fetch and Map Applications (ApplicationStatusV2)
-    let app_collection = mongo.get_collection_typed::<ApplicationStatusV2>(COLLECTION_CONFIGURED_APPLICATIONS_V2)?;
+    let app_collection = mongo.get_collection_typed::<ApplicationStatusV2Row>(COLLECTION_CONFIGURED_APPLICATIONS_V2)?;
     let mut app_cursor = app_collection.find(doc!{}).await?;
 
     let mut applications_v2: HashMap<String, ApplicationsV2> = HashMap::new();

@@ -80,12 +80,35 @@ pub struct ApplicationInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ApplicationStatusV2 {
+pub struct ApplicationStatusV2Row {
     pub instance_id: String,
     pub applications: HashMap<String, ApplicationInfo>,
     pub securite: String,
     pub supprime: bool,
+    #[serde(with="FromChrono04DateTime")]
     pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApplicationStatusV2Response {
+    pub instance_id: String,
+    pub applications: HashMap<String, ApplicationInfo>,
+    pub securite: String,
+    pub supprime: bool,
+    #[serde(with="ts_milliseconds")]
+    pub timestamp: DateTime<Utc>,
+}
+
+impl From<ApplicationStatusV2Row> for ApplicationStatusV2Response {
+    fn from(row: ApplicationStatusV2Row) -> Self {
+        Self {
+            instance_id: row.instance_id,
+            applications: row.applications,
+            securite: row.securite,
+            supprime: row.supprime,
+            timestamp: row.timestamp,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

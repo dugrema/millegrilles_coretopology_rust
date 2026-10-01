@@ -195,7 +195,7 @@ async fn event_presence_applications(
 
     let filter = doc! {"instance_id": instance_id.clone()};
     let collection = mongo.get_collection(COLLECTION_CONFIGURED_APPLICATIONS_V2)?;
-    let row_content = ApplicationStatusV2 {
+    let row_content = ApplicationStatusV2Row {
         instance_id,
         applications: event.applications,
         securite,

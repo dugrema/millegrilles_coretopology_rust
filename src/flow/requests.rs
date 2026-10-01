@@ -103,7 +103,7 @@ async fn request_domain_list<M>(
 #[derive(Serialize)]
 struct ResponseDeployedApplicationsV2 {
     ok: bool,
-    results: Vec<ApplicationStatusV2>,
+    results: Vec<ApplicationStatusV2Response>,
 }
 
 async fn request_deployed_userapps_v2<M>(
@@ -124,7 +124,7 @@ async fn request_deployed_userapps_v2<M>(
         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Acces refuse")).await
     };
 
-    let collection = mongo.get_collection_typed::<ApplicationStatusV2>(COLLECTION_CONFIGURED_APPLICATIONS_V2)?;
+    let collection = mongo.get_collection_typed::<ApplicationStatusV2Row>(COLLECTION_CONFIGURED_APPLICATIONS_V2)?;
     let mut application_list = vec![];
     let mut cursor = collection.find(doc!{"supprime": false}).await?;
     while let Some(application_row) = cursor.next().await {
@@ -141,11 +141,14 @@ async fn request_deployed_userapps_v2<M>(
         }
     }
 
-    let response = ResponseDeployedApplicationsV2 { ok: true, results: application_list };
+    let response = ResponseDeployedApplicationsV2 {
+        ok: true,
+        results: application_list.into_iter().map(|a| a.into()).collect()
+    };
     outbound.respond(wrapper.delivery_info, response).await
 }
 
-fn filter_applications_by_access(row: &mut ApplicationStatusV2, is_admin: bool) -> Result<(), CommonError> {
+fn filter_applications_by_access(row: &mut ApplicationStatusV2Row, is_admin: bool) -> Result<(), CommonError> {
     let mut new_app_map = HashMap::new();
     for (nom_app, mut value) in row.applications.drain() {
         let web = match value.web {
