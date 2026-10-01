@@ -145,7 +145,7 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
             nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_PRESENCE),
             routing_keys: vec![
                 // Domain status
-                ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_DOMAINE), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("evenement.*.{}", EVENEMENT_PRESENCE_DOMAINE), exchange: Securite::L3Protege },
 
                 // Instance status
                 ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L4Secure },
@@ -161,7 +161,7 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
             ],
             ttl: Some(QUEUE_TTL_PRESENCE),
             durable: true,
-            autodelete: false,
+            autodelete: true,
         })?;
 
     mq.add_named_queue(
