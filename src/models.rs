@@ -3,7 +3,7 @@ use millegrilles_common_rust::chrono::{DateTime, Utc};
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::bson::serde_helpers::datetime::FromChrono04DateTime;
 use millegrilles_common_rust::mongo_serde::option_chrono_04_datetime;
-use millegrilles_common_rust::chrono::serde::{ts_seconds, ts_seconds_option};
+use millegrilles_common_rust::chrono::serde::{ts_seconds, ts_milliseconds, ts_seconds_option};
 use millegrilles_common_rust::mongo_serde::map_opt_chrono_datetime_as_bson_datetime;
 use millegrilles_common_rust::serde_json::Value;
 
@@ -193,11 +193,37 @@ pub struct DiskIOInfo {
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CertissuerState {
+pub struct CertissuerStateRow {
+    #[serde(default, with="option_chrono_04_datetime")]
+    pub not_before: Option<DateTime<Utc>>,
+    #[serde(default, with="option_chrono_04_datetime")]
+    pub not_after: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertissuerStateResponse {
     #[serde(default, with="ts_seconds_option")]
     pub not_before: Option<DateTime<Utc>>,
     #[serde(default, with="ts_seconds_option")]
     pub not_after: Option<DateTime<Utc>>,
+}
+
+impl Into<CertissuerStateRow> for CertissuerStateResponse {
+    fn into(self) -> CertissuerStateRow {
+        CertissuerStateRow {
+            not_before: self.not_before,
+            not_after: self.not_after,
+        }
+    }
+}
+
+impl From<CertissuerStateRow> for CertissuerStateResponse {
+    fn from(row: CertissuerStateRow) -> Self {
+        Self {
+            not_before: row.not_before,
+            not_after: row.not_after,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,13 +245,38 @@ pub struct SystemState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ManagerStatusV2 {
+pub struct ManagerStatusV2Row {
     pub instance_id: String,
     pub system_state: SystemState,
     pub securite: String,
     pub supprime: bool,
+    #[serde(with="FromChrono04DateTime")]
     pub timestamp: DateTime<Utc>,
-    pub certissuer: Option<CertissuerState>,
+    pub certissuer: Option<CertissuerStateRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManagerStatusV2Response {
+    pub instance_id: String,
+    pub system_state: SystemState,
+    pub securite: String,
+    pub supprime: bool,
+    #[serde(with="ts_milliseconds")]
+    pub timestamp: DateTime<Utc>,
+    pub certissuer: Option<CertissuerStateResponse>,
+}
+
+impl From<ManagerStatusV2Row> for ManagerStatusV2Response {
+    fn from(manager: ManagerStatusV2Row) -> Self {
+        Self {
+            instance_id: manager.instance_id,
+            system_state: manager.system_state,
+            securite: manager.securite,
+            supprime: manager.supprime,
+            timestamp: manager.timestamp,
+            certissuer: match manager.certissuer { Some(value) => Some(value.into()), None => None },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

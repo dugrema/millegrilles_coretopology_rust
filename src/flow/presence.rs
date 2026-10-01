@@ -11,6 +11,7 @@ use millegrilles_common_rust::mongo_dao::MongoDao;
 use millegrilles_common_rust::serde::Deserialize;
 use millegrilles_common_rust::tracing::{debug, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
+use millegrilles_common_rust::serde_json;
 use std::collections::HashMap;
 
 pub async fn process_presence_event(
@@ -79,14 +80,14 @@ async fn event_presence_domain(
 struct PresenceInstanceEventV2 {
     system_state: SystemState,
     securite: Option<String>,
-    certissuer: Option<CertissuerState>,
+    certissuer: Option<CertissuerStateResponse>,
 }
 
 async fn event_presence_instance(
     mongo: &dyn MongoDao,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> {
-    // debug!("event_presence_instance\n{}", serde_json::to_string(&wrapper.message)?);
+    debug!("event_presence_instance\n{}", serde_json::to_string(&wrapper.message)?);
     let event: PresenceInstanceEventV2 = wrapper.message.deserialize()?;
     if ! wrapper.certificate.verifier_roles(vec![RolesCertificats::Instance])? {
         warn!("process_presence_instance_v2 Rejecting message not from an instance manager");
@@ -126,11 +127,11 @@ async fn event_presence_instance(
     }
 
     let filter = doc! {"instance_id": instance_id.clone()};
-    let row_content = ManagerStatusV2 {
+    let row_content = ManagerStatusV2Row {
         instance_id,
         system_state: event.system_state,
         securite,
-        certissuer: event.certissuer,
+        certissuer: match event.certissuer { Some(value) => Some(value.into()), None => None },
         supprime: false,
         timestamp: wrapper.message.estampille,
     };

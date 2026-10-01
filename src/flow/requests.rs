@@ -324,7 +324,7 @@ struct MessageInstanceId {
 #[derive(Serialize)]
 struct ResponseServerInstancesV2 {
     ok: bool,
-    results: Vec<ManagerStatusV2>,
+    results: Vec<ManagerStatusV2Response>,
 }
 
 
@@ -347,14 +347,17 @@ async fn request_server_instances<M>(
         Some(inner) => doc!{"instance_id": inner},
         None => doc!{}
     };
-    let collection = mongo.get_collection_typed::<ManagerStatusV2>(COLLECTION_INSTANCE_STATUS_V2)?;
+    let collection = mongo.get_collection_typed::<ManagerStatusV2Row>(COLLECTION_INSTANCE_STATUS_V2)?;
     let mut results = vec![];
     let mut cursor = collection.find(filtre).await?;
     while let Some(row) = cursor.next().await {
         results.push(row?);
     }
 
-    let response = ResponseServerInstancesV2 {ok: true, results};
+    let response = ResponseServerInstancesV2 {
+        ok: true,
+        results: results.into_iter().map(|v| v.into()).collect()
+    };
     outbound.respond(wrapper.delivery_info, response).await
 }
 

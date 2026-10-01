@@ -145,13 +145,13 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
             nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_PRESENCE),
             routing_keys: vec![
                 // Domain status
-                ConfigRoutingExchange { routing_key: format!("evenement.*.{}", EVENEMENT_PRESENCE_DOMAINE), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_DOMAINE), exchange: Securite::L3Protege },
 
                 // Instance status
-                ConfigRoutingExchange { routing_key: format!("evenement.*.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L4Secure },
-                ConfigRoutingExchange { routing_key: format!("evenement.*.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L3Protege },
-                ConfigRoutingExchange { routing_key: format!("evenement.*.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L2Prive },
-                ConfigRoutingExchange { routing_key: format!("evenement.*.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L1Public },
+                ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L4Secure },
+                ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L2Prive },
+                ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_INSTANCE_V2), exchange: Securite::L1Public },
 
                 // Installed applications
                 ConfigRoutingExchange { routing_key: format!("evenement.instance.{}", EVENEMENT_PRESENCE_INSTANCE_APPLICATIONS_V2), exchange: Securite::L4Secure },
