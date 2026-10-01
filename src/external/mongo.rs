@@ -91,6 +91,86 @@ pub async fn create_index_mongodb(db: &dyn MongoDao, config: &dyn ConfigMessages
     ).await?;
 
     // TDOD Collection indices
-    
+
+    db.create_index(
+        NOM_COLLECTION_INSTANCE_STATUS_V2,
+        vec!(
+            ChampIndex { nom_champ: String::from("instance_id"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("server_instance_id")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        NOM_COLLECTION_INSTANCE_CONFIGURATION,
+        vec!(
+            ChampIndex { nom_champ: String::from("instance_id"), direction: 1 },
+            ChampIndex { nom_champ: String::from("name"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("unique_id")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        COLLECTION_DOMAINS,
+        vec!(
+            ChampIndex { nom_champ: String::from(CHAMP_DOMAINE), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from(INDEX_DOMAINE)),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        NOM_COLLECTION_FILEHOSTS,
+        vec!(
+            ChampIndex { nom_champ: String::from("filehost_id"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("filehost_unique")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        NOM_COLLECTION_FILEHOSTING_FUUIDS,
+        vec!(
+            ChampIndex { nom_champ: String::from("fuuid"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("fuuids")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        NOM_COLLECTION_FILEHOSTING_TRANSFERS,
+        vec!(
+            ChampIndex { nom_champ: String::from("destination_filehost_id"), direction: 1 },
+            ChampIndex { nom_champ: String::from("fuuid"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("filehost_fuuid")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        NOM_COLLECTION_FILEHOSTING_SYNC_STATUS,
+        vec!(
+            ChampIndex { nom_champ: String::from("claimer_type"), direction: 1 },
+            ChampIndex { nom_champ: String::from("claimer"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("claimers")),
+            unique: true,
+        })
+    ).await?;
+
     Ok(())
 }
