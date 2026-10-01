@@ -22,6 +22,7 @@ use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use std::collections::{HashMap, HashSet};
+use millegrilles_common_rust::v3::ChiffrageService;
 
 pub async fn process_command<M>(
     mongo: &M,
@@ -508,6 +509,7 @@ async fn parse_filehost_visits<M>(
 pub async fn process_transaction<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
+    chiffrage: &dyn ChiffrageService,
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
@@ -522,7 +524,7 @@ pub async fn process_transaction<M>(
         TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_UPDATE => update_filehost(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_DELETE => delete_filehost(mongo, outbound, transaction, wrapper).await,
-        TRANSACTION_CONFIGURATION_CREATE_FILE => configuration_create_file(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_CONFIGURATION_CREATE_FILE => configuration_create_file(mongo, outbound, chiffrage, transaction, wrapper).await,
         TRANSACTION_CONFIGURATION_UPDATE_FILE => configuration_update_file(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_CONFIGURATION_DELETE_FILE => configuration_delete_file(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_CONFIGURATION_SET_PROPERTY => configuration_set_property(mongo, outbound, transaction, wrapper).await,
@@ -945,14 +947,59 @@ async fn delete_filehost<M>(
     outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
 
+#[derive(Serialize)]
+struct ResponseConfigurationCreateFile {
+    file_id: String,
+    key_id: String,
+}
+
 async fn configuration_create_file<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
+    chiffrage: &dyn ChiffrageService,
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let command: CommandCreateConfigurationFile = wrapper.message.deserialize()?;
+
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    // Check if the configuration file exists, by name.
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
+    let result = collection
+        .find_one(doc!{"filename": &command.filename})
+        .projection(doc!{"filename": true})
+        .await?;
+    if result.is_some() {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(409, "File already exists")).await
+    }
+
+    // The command does not include an encryption key. Create one, save it with the keymaster
+    // and create a transaction to process.
+    let new_key = chiffrage.generate_new_key(&vec![DOMAIN_NAME.to_string()]).await?;
+    let key_id = new_key.key_id.clone();
+    debug!("Saving new key {}", key_id);
+    outbound.save_keys(&vec![&new_key], Some(5_000)).await?;
+
+    let transaction_value = TransactionCreateConfigurationFile {
+        filename: command.filename,
+        roles: command.roles,
+        domains: command.domains,
+        key_id: new_key.key_id,
+        requestor_fingerprint: wrapper.certificate.fingerprint()?,
+    };
+
+    let file_id = transaction.process_value(
+        DOMAIN_NAME,
+        TRANSACTION_CONFIGURATION_CREATE_FILE,
+        serde_json::to_value(transaction_value)?,
+        None
+    ).await?;
+
+    let response = ResponseConfigurationCreateFile { file_id, key_id };
+    outbound.respond(wrapper.delivery_info, response).await
 }
 
 async fn configuration_update_file<M>(
@@ -961,8 +1008,34 @@ async fn configuration_update_file<M>(
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionUpdateConfigurationFile = wrapper.message.deserialize()?;
+
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    // Check if there are changes in the transaction
+    if transaction_value.domains.is_none() &&
+        transaction_value.filename.is_none() &&
+        transaction_value.roles.is_none()
+    {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(400, "No changes detected in transaction")).await
+    }
+
+    // Check if the configuration file exists, by name.
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
+    let result = collection
+        .find_one(doc!{"file_id": &transaction_value.file_id})
+        .projection(doc!{"file_id": true})
+        .await?;
+    if result.is_none() {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    }
+
+    let delivery_info = wrapper.delivery_info.clone();
+    transaction.process_transaction(wrapper.into(), None).await?;
+
+    outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
 
 async fn configuration_delete_file<M>(
@@ -971,8 +1044,26 @@ async fn configuration_delete_file<M>(
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionDeleteConfigurationFile = wrapper.message.deserialize()?;
+
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    // Check if the configuration file exists, by name.
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
+    let result = collection
+        .find_one(doc!{"file_id": &transaction_value.file_id})
+        .projection(doc!{"file_id": true})
+        .await?;
+    if result.is_none() {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    }
+
+    let delivery_info = wrapper.delivery_info.clone();
+    transaction.process_transaction(wrapper.into(), None).await?;
+
+    outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
 
 async fn configuration_set_property<M>(
@@ -981,8 +1072,26 @@ async fn configuration_set_property<M>(
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionSetFileProperty = wrapper.message.deserialize()?;
+
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    // Check if the configuration file exists, by id. Do not set property for non-existant file.
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
+    let result = collection
+        .find_one(doc!{"file_id": &transaction_value.file_id})
+        .projection(doc!{"file_id": true})
+        .await?;
+    if result.is_none() {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    }
+
+    let delivery_info = wrapper.delivery_info.clone();
+    transaction.process_transaction(wrapper.into(), None).await?;
+
+    outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
 
 async fn configuration_delete_property<M>(
@@ -991,6 +1100,23 @@ async fn configuration_delete_property<M>(
     transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionDeleteFileProperty = wrapper.message.deserialize()?;
+
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_PROPERTIES)?;
+    let result = collection
+        .find_one(doc!{"file_id": &transaction_value.file_id, "key": &transaction_value.key})
+        .projection(doc!{"_id": true})
+        .await?;
+    if result.is_none() {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    }
+
+    let delivery_info = wrapper.delivery_info.clone();
+    transaction.process_transaction(wrapper.into(), None).await?;
+
+    outbound.respond(delivery_info, ErrorMessage::ok()).await
 }

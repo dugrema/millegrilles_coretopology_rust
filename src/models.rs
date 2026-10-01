@@ -475,7 +475,7 @@ pub struct SyncStatusRow {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ConfigurationFile {
+pub struct ConfigurationFileRow {
     pub file_id: String,
     /// Name of this collection of properties
     pub filename: String,
@@ -484,7 +484,7 @@ pub struct ConfigurationFile {
     /// Domains allowed to request the decryptee values
     pub domains: Option<Vec<String>>,
     #[serde(with="FromChrono04DateTime")]
-    pub last_modification: DateTime<Utc>,
+    pub last_modified: DateTime<Utc>,
     /// Id to get decrypted key back from KeyMaster
     pub key_id: String,
     /// Cached value of the decryption key - encrypted using current signing key,
@@ -493,12 +493,14 @@ pub struct ConfigurationFile {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ConfigurationProperty {
+pub struct ConfigurationPropertyRow {
     pub file_id: String,
     /// Name of this property
     pub key: String,
     /// Encrypted values
     pub value: EncryptedDocument,
+    #[serde(with="FromChrono04DateTime")]
+    pub last_modified: DateTime<Utc>,
 }
 
 /// Decrypted content of the configuration property value field.
@@ -510,4 +512,56 @@ pub struct ConfigurationValue {
     pub inumber: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fnumber: Option<f64>,
+}
+
+#[derive(Deserialize)]
+pub struct CommandCreateConfigurationFile {
+    pub filename: String,
+    pub roles: Option<Vec<String>>,
+    pub domains: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionCreateConfigurationFile {
+    /// Name of this collection of properties
+    pub filename: String,
+    /// Roles allowed to request the decrypted values
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<String>>,
+    /// Domains allowed to request the decrypted values
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domains: Option<Vec<String>>,
+    /// Id to get decrypted key back from KeyMaster
+    pub key_id: String,
+    /// Since this transaction is created by the domain, keep track of requesting party
+    pub requestor_fingerprint: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionUpdateConfigurationFile {
+    pub file_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domains: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionDeleteConfigurationFile {
+    pub file_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionSetFileProperty {
+    pub file_id: String,
+    pub key: String,
+    pub value: EncryptedDocument,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionDeleteFileProperty {
+    pub file_id: String,
+    pub key: String,
 }

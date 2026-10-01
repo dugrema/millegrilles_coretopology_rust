@@ -171,6 +171,17 @@ pub async fn create_index_mongodb(db: &dyn MongoDao) -> Result<(), CommonError> 
     ).await?;
 
     db.create_index(
+        COLLECTION_CONFIGURATION_FILES,
+        vec!(
+            ChampIndex { nom_champ: String::from("filename"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("filename")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
         COLLECTION_CONFIGURATION_PROPERTIES,
         vec!(
             ChampIndex { nom_champ: String::from("file_id"), direction: 1 },
@@ -181,10 +192,6 @@ pub async fn create_index_mongodb(db: &dyn MongoDao) -> Result<(), CommonError> 
             unique: true,
         })
     ).await?;
-
-    // pub const COLLECTION_CONFIGURATION_FILES: &str = "CoreTopologie/configuration/files";
-    // pub const COLLECTION_CONFIGURATION_VALUES: &str = "CoreTopologie/configuration/values";
-
 
     Ok(())
 }

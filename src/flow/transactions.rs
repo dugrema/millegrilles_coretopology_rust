@@ -5,13 +5,14 @@ use millegrilles_common_rust::mongo_dao::{MongoDao, MongoDaoImpl, MongoDaoTyped}
 use millegrilles_common_rust::mongodb::ClientSession;
 use millegrilles_common_rust::serde_json::Value;
 use millegrilles_common_rust::v3::impls::transaction_service::TransactionServiceImpl;
-use millegrilles_common_rust::v3::models::{TransactionOperationAggregator, TransactionWrapper};
+use millegrilles_common_rust::v3::models::{BatchInsertions, TransactionOperationAggregator, TransactionWrapper};
 use millegrilles_common_rust::v3::{ConfigService, FormatService, TransactionRouter, TransactionService};
 use std::sync::Arc;
+use millegrilles_common_rust::bson;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::chrono::Utc;
 use millegrilles_common_rust::constantes::CHAMP_MODIFICATION;
-use millegrilles_common_rust::mongodb::options::{DeleteOneModel, UpdateOneModel, WriteModel};
+use millegrilles_common_rust::mongodb::options::{DeleteManyModel, DeleteOneModel, UpdateOneModel, WriteModel};
 use millegrilles_common_rust::tracing::warn;
 use crate::external::mq::*;
 use crate::models::*;
@@ -44,7 +45,7 @@ impl TopologyTransactionService {
         self.transaction.process_transaction(wrapper, session).await
     }
 
-    pub async fn process_value(&self, domain: &str, action: &str, value: Value, session: Option<&mut ClientSession>) -> Result<(), CommonError> {
+    pub async fn process_value(&self, domain: &str, action: &str, value: Value, session: Option<&mut ClientSession>) -> Result<String, CommonError> {
         self.transaction.process_value(domain, action, value, session).await
     }
 }
@@ -67,7 +68,7 @@ impl TransactionRouter for TopologyTransactionRouter {
             TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_UPDATE => update_filehost(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_DELETE => delete_filehost(self.mongo.as_ref(), wrapper).await,
-            TRANSACTION_CONFIGURATION_CREATE_FILE => configuration_create_file(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_CONFIGURATION_CREATE_FILE => configuration_create_file(wrapper).await,
             TRANSACTION_CONFIGURATION_UPDATE_FILE => configuration_update_file(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_CONFIGURATION_DELETE_FILE => configuration_delete_file(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_CONFIGURATION_SET_PROPERTY => configuration_set_property(self.mongo.as_ref(), wrapper).await,
@@ -296,22 +297,64 @@ async fn delete_filehost<M>(
     Ok(aggregator)
 }
 
-async fn configuration_create_file<M>(
-    mongo: &M,
+async fn configuration_create_file(
     wrapper: TransactionWrapper,
-) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+) -> Result<TransactionOperationAggregator, CommonError>
 {
-    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionCreateConfigurationFile = wrapper.message.deserialize()?;
+
+    let row = ConfigurationFileRow {
+        // The file_id is the transaction id
+        file_id: wrapper.message.id,
+        // Copy remaining values
+        filename: transaction_value.filename,
+        roles: transaction_value.roles,
+        domains: transaction_value.domains,
+        last_modified: Utc::now(),
+        key_id: transaction_value.key_id,
+        // This is a placeholder for re-encrypting the file key (volatile), always None in the transaction.
+        encrypted_file_key: None,
+    };
+
+    let serialized_value = bson::serialize_to_document(&row)?;
+
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.batch_insertions = Some(vec![BatchInsertions::new(
+        COLLECTION_CONFIGURATION_FILES,
+        vec![serialized_value]
+    )]);
+
+    Ok(aggregator)
 }
 
-async fn configuration_update_file<M>(
-    mongo: &M,
+async fn configuration_update_file(
+    mongo: &dyn MongoDao,
     wrapper: TransactionWrapper,
-) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+) -> Result<TransactionOperationAggregator, CommonError>
 {
-    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionUpdateConfigurationFile = wrapper.message.deserialize()?;
+
+    let mut serialized_doc = bson::serialize_to_document(&transaction_value)?;
+    serialized_doc.remove("file_id");  // Not re-setting the key
+    let ops = doc!{
+        "$set": serialized_doc,
+        "$currentDate": {"last_modified": true}
+    };
+    let filter = doc!{"file_id": &transaction_value.file_id};
+
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
+
+    let update_model_versions = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_versions]);
+
+    Ok(aggregator)
 }
 
 async fn configuration_delete_file<M>(
@@ -319,8 +362,30 @@ async fn configuration_delete_file<M>(
     wrapper: TransactionWrapper,
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
 {
-    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionDeleteConfigurationFile = wrapper.message.deserialize()?;
+    let filter = doc!{"file_id": &transaction_value.file_id};
+
+    // Delete all properties associated to this file
+    let collection_properties = mongo.get_collection(COLLECTION_CONFIGURATION_PROPERTIES)?;
+    let delete_model_properties = WriteModel::DeleteMany(
+        DeleteManyModel::builder()
+            .namespace(collection_properties.namespace())
+            .filter(filter.clone())
+            .build()
+    );
+
+    let collection_files = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
+    let delete_model_versions = WriteModel::DeleteOne(
+        DeleteOneModel::builder()
+            .namespace(collection_files.namespace())
+            .filter(filter)
+            .build()
+    );
+
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.unordered = Some(vec![delete_model_properties, delete_model_versions]);
+
+    Ok(aggregator)
 }
 
 async fn configuration_set_property<M>(
@@ -328,8 +393,28 @@ async fn configuration_set_property<M>(
     wrapper: TransactionWrapper,
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
 {
-    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionSetFileProperty = wrapper.message.deserialize()?;
+
+    let filter = doc!{"file_id": &transaction_value.file_id, "key": &transaction_value.key};
+    let ops = doc!{
+        "$set": {"value": bson::serialize_to_document(&transaction_value.value)?},
+        "$currentDate": {"last_modified": true}
+    };
+
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_PROPERTIES)?;
+
+    let update_model_versions = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .upsert(true)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_versions]);
+
+    Ok(aggregator)
 }
 
 async fn configuration_delete_property<M>(
@@ -337,6 +422,19 @@ async fn configuration_delete_property<M>(
     wrapper: TransactionWrapper,
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
 {
-    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
-    todo!()
+    let transaction_value: TransactionDeleteFileProperty = wrapper.message.deserialize()?;
+    let filter = doc!{"file_id": &transaction_value.file_id, "key": &transaction_value.key};
+
+    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_PROPERTIES)?;
+    let delete_model = WriteModel::DeleteOne(
+        DeleteOneModel::builder()
+            .namespace(collection.namespace())
+            .filter(filter)
+            .build()
+    );
+
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.unordered = Some(vec![delete_model]);
+
+    Ok(aggregator)
 }
