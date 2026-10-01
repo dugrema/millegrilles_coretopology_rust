@@ -27,6 +27,8 @@ pub const REQUETE_GET_DOMAINS_BACKUP_VERSIONS: &str = "getDomainBackupVersions";
 pub const REQUEST_SERVER_INSTANCES_V2: &str = "requestServerInstancesV2";
 pub const REQUEST_SERVER_INSTANCE_CONFIGURATION: &str = "requestServerInstanceConfiguration";
 pub const REQUEST_FILEHOSTS_FOR_FUUIDS: &str = "requestFilehostsForFuuids";
+pub const REQUEST_CONFIGURATION_GET_FILES: &str = "requestConfigurationGetFiles";
+pub const REQUEST_CONFIGURATION_GET_PROPERTIES: &str = "requestConfigurationGetProperties";
 
 // Commands
 pub const COMMANDE_SET_CLEID_BACKUP_DOMAINE: &str = "setCleidBackupDomaine";
@@ -54,6 +56,11 @@ pub const TRANSACTION_FILEHOST_DELETE: &str = "filehostDelete";
 pub const TRANSACTION_FILEHOST_RESTORE: &str = "filehostRestore";
 pub const TRANSACTION_FILEHOST_DEFAULT: &str = "setDefaultFilehost";
 pub const TRANSACTION_DELETE_DOMAIN: &str = "deleteDomain";
+pub const TRANSACTION_CONFIGURATION_CREATE_FILE: &str = "configurationCreateFile";
+pub const TRANSACTION_CONFIGURATION_UPDATE_FILE: &str = "configurationUpdateFile";
+pub const TRANSACTION_CONFIGURATION_DELETE_FILE: &str = "configurationDeleteFile";
+pub const TRANSACTION_CONFIGURATION_SET_PROPERTY: &str = "configurationSetProperty";
+pub const TRANSACTION_CONFIGURATION_DELETE_PROPERTY: &str = "configurationDeleteProperty";
 
 // Events
 
@@ -118,6 +125,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILECONTROLERS), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILEHOST_FOR_INSTANCE), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_DOMAINS_BACKUP_VERSIONS), exchange: Securite::L1Public },
+                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_CONFIGURATION_GET_FILES), exchange: Securite::L1Public },
+                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_CONFIGURATION_GET_PROPERTIES), exchange: Securite::L1Public },
             ],
             ttl: Some(QUEUE_TTL_DEFAULT),
             durable: true,
@@ -196,6 +205,12 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_SET_FILEHOST_FOR_INSTANCE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_FILEHOST_DEFAULT), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_DELETE_DOMAIN), exchange: Securite::L3Protege },
+
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_CONFIGURATION_CREATE_FILE), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_CONFIGURATION_UPDATE_FILE), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_CONFIGURATION_DELETE_FILE), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_CONFIGURATION_SET_PROPERTY), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_CONFIGURATION_DELETE_PROPERTY), exchange: Securite::L3Protege },
 
                 // 1.public
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_FILEHOST_ADD_V2), exchange: Securite::L1Public },

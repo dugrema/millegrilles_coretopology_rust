@@ -18,6 +18,8 @@ pub const COLLECTION_FILEHOSTING_VISITS: &str = "CoreTopologie/filehostingVisits
 pub const COLLECTION_FILEHOSTING_SYNC_STATUS: &str = "CoreTopologie/filehostingSyncStatus";
 pub const COLLECTION_INSTANCE_STATUS_V2: &str = "CoreTopologie/instances/statusV2";
 pub const COLLECTION_INSTANCE_CONFIGURATION: &str = "CoreTopologie/instances/configuration";
+pub const COLLECTION_CONFIGURATION_FILES: &str = "CoreTopologie/configuration/files";
+pub const COLLECTION_CONFIGURATION_PROPERTIES: &str = "CoreTopologie/configuration/properties";
 
 pub const INDEX_DOMAINE: &str = "domaine";
 
@@ -155,6 +157,34 @@ pub async fn create_index_mongodb(db: &dyn MongoDao) -> Result<(), CommonError> 
             unique: true,
         })
     ).await?;
+
+
+    db.create_index(
+        COLLECTION_CONFIGURATION_FILES,
+        vec!(
+            ChampIndex { nom_champ: String::from("file_id"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("file_id")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        COLLECTION_CONFIGURATION_PROPERTIES,
+        vec!(
+            ChampIndex { nom_champ: String::from("file_id"), direction: 1 },
+            ChampIndex { nom_champ: String::from("key"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("file_key")),
+            unique: true,
+        })
+    ).await?;
+
+    // pub const COLLECTION_CONFIGURATION_FILES: &str = "CoreTopologie/configuration/files";
+    // pub const COLLECTION_CONFIGURATION_VALUES: &str = "CoreTopologie/configuration/values";
+
 
     Ok(())
 }

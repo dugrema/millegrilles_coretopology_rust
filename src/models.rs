@@ -4,6 +4,7 @@ use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::bson::serde_helpers::datetime::FromChrono04DateTime;
 use millegrilles_common_rust::mongo_serde::option_chrono_04_datetime;
 use millegrilles_common_rust::chrono::serde::{ts_seconds, ts_milliseconds, ts_seconds_option};
+use millegrilles_common_rust::millegrilles_cryptographie::chiffrage_docs::EncryptedDocument;
 use millegrilles_common_rust::mongo_serde::map_opt_chrono_datetime_as_bson_datetime;
 use millegrilles_common_rust::serde_json::Value;
 
@@ -471,4 +472,42 @@ pub struct SyncStatusRow {
     pub claimer_type: String,
     #[serde(default, with = "option_chrono_04_datetime")]
     pub date_ready: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ConfigurationFile {
+    pub file_id: String,
+    /// Name of this collection of properties
+    pub filename: String,
+    /// Roles allowed to request the decrypted values
+    pub roles: Option<Vec<String>>,
+    /// Domains allowed to request the decryptee values
+    pub domains: Option<Vec<String>>,
+    #[serde(with="FromChrono04DateTime")]
+    pub last_modification: DateTime<Utc>,
+    /// Id to get decrypted key back from KeyMaster
+    pub key_id: String,
+    /// Cached value of the decryption key - encrypted using current signing key,
+    /// invalid upon certificate rotation.
+    pub encrypted_file_key: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ConfigurationProperty {
+    pub file_id: String,
+    /// Name of this property
+    pub key: String,
+    /// Encrypted values
+    pub value: EncryptedDocument,
+}
+
+/// Decrypted content of the configuration property value field.
+#[derive(Serialize, Deserialize)]
+pub struct ConfigurationValue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inumber: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fnumber: Option<f64>,
 }
