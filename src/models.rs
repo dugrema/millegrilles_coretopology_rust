@@ -492,6 +492,30 @@ pub struct ConfigurationFileRow {
     pub encrypted_file_key: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct ConfigurationFileResponse {
+    pub file_id: String,
+    pub filename: String,
+    pub roles: Option<Vec<String>>,
+    pub domains: Option<Vec<String>>,
+    #[serde(with="ts_milliseconds")]
+    pub last_modified: DateTime<Utc>,
+    pub key_id: String,
+}
+
+impl From<ConfigurationFileRow> for ConfigurationFileResponse {
+    fn from(row: ConfigurationFileRow) -> Self {
+        Self {
+            file_id: row.file_id,
+            filename: row.filename,
+            roles: row.roles,
+            domains: row.domains,
+            last_modified: row.last_modified,
+            key_id: row.key_id,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct ConfigurationPropertyRow {
     pub file_id: String,

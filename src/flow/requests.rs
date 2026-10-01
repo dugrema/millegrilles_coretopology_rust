@@ -6,15 +6,19 @@ use crate::external::mongo::*;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
-use millegrilles_common_rust::tracing::{debug, info, warn};
+use millegrilles_common_rust::tracing::{debug, error, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
 use millegrilles_common_rust::{millegrilles_cryptographie, serde_json};
+use millegrilles_common_rust::chrono::{DateTime, Utc};
 use millegrilles_common_rust::generateur_messages::{RoutageMessageAction, RoutageMessageReponse};
 use millegrilles_common_rust::tokio_stream::StreamExt;
 use millegrilles_common_rust::v3::{ChiffrageService, ConfigService, FormatService, MessagingService};
+use millegrilles_common_rust::chrono::serde::ts_milliseconds;
+use millegrilles_common_rust::mongodb::options::Hint;
+use millegrilles_common_rust::base64::{engine::general_purpose::STANDARD as base64, Engine as _};
 use crate::constants::DOMAIN_NAME;
 use crate::fiche::generer_contenu_fiche_publique;
 use crate::models::*;
@@ -609,18 +613,170 @@ async fn request_domains_backup_versions<M>(
     outbound.respond(wrapper.delivery_info, response).await
 }
 
+#[derive(Serialize)]
+struct ResponseConfigurationGetFiles {
+    list: Vec<ConfigurationFileResponse>
+}
+
 async fn request_configuration_get_files<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    let mut result_list: Vec<ConfigurationFileResponse> = Vec::with_capacity(50);
+
+    // No parameters, just get the list of all configuration files and return.
+    let collection = mongo.get_collection_typed::<ConfigurationFileRow>(COLLECTION_CONFIGURATION_FILES)?;
+    let mut cursor = collection.find(doc!{}).await?;
+    while let Some(row) = cursor.next().await {
+        result_list.push(row?.into());
+    }
+
+    let response = ResponseConfigurationGetFiles { list: result_list };
+    outbound.respond(wrapper.delivery_info, response).await
 }
+
+#[derive(Deserialize)]
+struct RequestConfigurationGetProperties {
+    filename: String,
+    /// Target specific property keys
+    keys: Option<Vec<String>>,
+    /// When true, sends the secret key for this file (must be admin)
+    send_key: Option<bool>,
+    skip: Option<u64>,
+    limit: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct ResponseConfigurationGetProperties {
+    file_id: String,
+    filename: String,
+    /// Decryption key id (keymaster ref)
+    key_id: String,
+    /// Last modification of either file or any properties in the list
+    #[serde(with="ts_milliseconds")]
+    last_modified: DateTime<Utc>,
+    /// Decrypted properties
+    list: Vec<ConfigurationValue>,
+    /// Contains the unencrypted secret key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secret_key: Option<String>,
+    /// False if all properties have not been returned
+    done: bool,
+}
+
+const OUTPUT_SIZE_LIMIT: usize = 3 * 1024 * 1024;
 
 async fn request_configuration_get_properties<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
-    todo!()
+    let request: RequestConfigurationGetProperties = wrapper.message.deserialize()?;
+    let certificate = wrapper.certificate.as_ref();
+
+    let is_admin = certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)?;
+    if request.send_key == Some(true) && !is_admin {
+        // Must be admin to request the decryption key
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    let collection_file = mongo.get_collection_typed::<ConfigurationFileRow>(COLLECTION_CONFIGURATION_FILES)?;
+    let file = match collection_file.find_one(doc!{"filename": request.filename}).await? {
+        Some(file) => file,
+        None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    };
+
+    // Check authorization to get these properties
+    let mut authorized = is_admin;  // Admin always authorized
+    if ! authorized && let Some(roles) = file.roles {
+        // Check that any one of these roles is in the certificate
+        authorized = certificate.verifier_roles_string(roles)?;
+    }
+    if ! authorized && let Some(domains) = file.domains {
+        // Check that any one of these domains is in the certificate
+        authorized = certificate.verifier_domaines(domains)?;
+    }
+    if ! authorized {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    if let Some(_encrypted_key) = file.encrypted_file_key {
+        // TODO Try to decrypt the key
+    }
+
+    // Get the decryption key
+    let key = match outbound.get_keys(DOMAIN_NAME, vec![file.key_id.clone()], None).await {
+        Ok(mut keys) => match keys.pop() {
+            Some(key) => key,
+            None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "Decryption key not found")).await
+        },
+        Err(e) => {
+            error!("Error trying to get configuration file decryption key: {:?}", e);
+            return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(500, "Decryption key not available")).await
+        }
+    };
+
+    // TODO - Re-encrypt and save key to avoid round-trips to keymaster
+
+    let mut property_filter = doc!{"file_id": &file.file_id};
+    if let Some(keys) = request.keys {
+        property_filter.insert("key", doc!{"$in": keys});
+    }
+
+    let skip = request.skip.unwrap_or(0);
+    let limit = request.limit.unwrap_or(1000) as usize;
+    let mut output_size = 0;
+    let mut last_modified = file.last_modified;
+    let mut list = Vec::with_capacity(limit as usize);
+
+    let collection_properties = mongo.get_collection_typed::<ConfigurationPropertyRow>(COLLECTION_CONFIGURATION_PROPERTIES)?;
+    let mut cursor = collection_properties
+        .find(property_filter)
+        .skip(skip)
+        .hint(Hint::Name("file_key".into()))
+        .await?;
+
+    while let Some(row) = cursor.next().await {
+        let row = row?;
+        output_size += row.value.ciphertext_base64.len() + 100;  // Approximate weight of record
+
+        // Keep the latest modified date
+        if row.last_modified > last_modified {
+            last_modified = row.last_modified;
+        }
+
+        // Decrypt
+        let decrypted_value = row.value.decrypt_with_secret(&key.secret)?;
+        let value: ConfigurationValue = serde_json::from_slice(&decrypted_value)?;
+        list.push(value);
+        if output_size > OUTPUT_SIZE_LIMIT {
+            break;
+        }
+    }
+
+    let done = list.len() < limit;
+
+    let mut response = ResponseConfigurationGetProperties {
+        file_id: file.file_id,
+        filename: file.filename,
+        key_id: file.key_id,
+        last_modified,
+        list,
+        secret_key: None,
+        done,
+    };
+
+    if is_admin && request.send_key == Some(true) {
+        // The user is an admin and is requesting the key
+        response.secret_key = Some(base64.encode(&key.secret.0));
+    }
+
+    // Respond with transparent encryption. This will compress and encrypt the reply.
+    outbound.respond_encrypted(wrapper.delivery_info, response, wrapper.certificate.as_ref()).await
 }
