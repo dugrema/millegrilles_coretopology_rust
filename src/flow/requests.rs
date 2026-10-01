@@ -615,6 +615,7 @@ async fn request_domains_backup_versions<M>(
 
 #[derive(Serialize)]
 struct ResponseConfigurationGetFiles {
+    ok: bool,
     list: Vec<ConfigurationFileResponse>
 }
 
@@ -637,7 +638,7 @@ async fn request_configuration_get_files<M>(
         result_list.push(row?.into());
     }
 
-    let response = ResponseConfigurationGetFiles { list: result_list };
+    let response = ResponseConfigurationGetFiles { ok: true, list: result_list };
     outbound.respond(wrapper.delivery_info, response).await
 }
 

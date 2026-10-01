@@ -310,7 +310,7 @@ async fn configuration_create_file(
         filename: transaction_value.filename,
         roles: transaction_value.roles,
         domains: transaction_value.domains,
-        last_modified: Utc::now(),
+        last_modified: wrapper.message.estampille,
         key_id: transaction_value.key_id,
         // This is a placeholder for re-encrypting the file key (volatile), always None in the transaction.
         encrypted_file_key: None,
@@ -333,13 +333,12 @@ async fn configuration_update_file(
 ) -> Result<TransactionOperationAggregator, CommonError>
 {
     let transaction_value: TransactionUpdateConfigurationFile = wrapper.message.deserialize()?;
+    let modification_date: bson::DateTime = wrapper.message.estampille.clone().into();
 
     let mut serialized_doc = bson::serialize_to_document(&transaction_value)?;
     serialized_doc.remove("file_id");  // Not re-setting the key
-    let ops = doc!{
-        "$set": serialized_doc,
-        "$currentDate": {"last_modified": true}
-    };
+    serialized_doc.insert("last_modified", modification_date);
+    let ops = doc!{"$set": serialized_doc};
     let filter = doc!{"file_id": &transaction_value.file_id};
 
     let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
@@ -394,25 +393,45 @@ async fn configuration_set_property<M>(
 ) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
 {
     let transaction_value: TransactionSetFileProperty = wrapper.message.deserialize()?;
+    let modification_date: bson::DateTime = wrapper.message.estampille.clone().into();
 
     let filter = doc!{"file_id": &transaction_value.file_id, "key": &transaction_value.key};
     let ops = doc!{
-        "$set": {"value": bson::serialize_to_document(&transaction_value.value)?},
-        "$currentDate": {"last_modified": true}
+        "$set": {
+            "value": bson::serialize_to_document(&transaction_value.value)?,
+            "last_modified": &modification_date,
+        },
     };
 
-    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_PROPERTIES)?;
+    let collection_properties = mongo.get_collection(COLLECTION_CONFIGURATION_PROPERTIES)?;
 
-    let update_model_versions = WriteModel::UpdateOne(
+    let update_model_properties = WriteModel::UpdateOne(
         UpdateOneModel::builder()
-            .namespace(collection.namespace())
+            .namespace(collection_properties.namespace())
             .filter(filter)
             .update(ops)
             .upsert(true)
             .build()
     );
+
+    // Update last_modified on file
+    let collection_files = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
+    let filter = doc!{"file_id": &transaction_value.file_id};
+    let ops = doc!{
+        "$set": {
+            "last_modified": &modification_date,
+        },
+    };
+    let update_model_file = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .namespace(collection_files.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+
     let mut aggregator = TransactionOperationAggregator::new();
-    aggregator.ordered = Some(vec![update_model_versions]);
+    aggregator.ordered = Some(vec![update_model_properties, update_model_file]);
 
     Ok(aggregator)
 }

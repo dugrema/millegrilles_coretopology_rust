@@ -115,6 +115,7 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_CLEID_BACKUP_DOMAINE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_CONFIGURATION_FILEHOSTS), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_FILEHOSTS_FOR_FUUIDS), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_CONFIGURATION_GET_FILES), exchange: Securite::L3Protege },
 
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_DOMAIN_LIST), exchange: Securite::L2Prive },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_USERAPPS_DEPLOYEES_V2), exchange: Securite::L2Prive },
@@ -125,7 +126,6 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILECONTROLERS), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_FILEHOST_FOR_INSTANCE), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUETE_GET_DOMAINS_BACKUP_VERSIONS), exchange: Securite::L1Public },
-                ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_CONFIGURATION_GET_FILES), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_CONFIGURATION_GET_PROPERTIES), exchange: Securite::L1Public },
             ],
             ttl: Some(QUEUE_TTL_DEFAULT),

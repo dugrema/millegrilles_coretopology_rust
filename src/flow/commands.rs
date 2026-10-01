@@ -949,6 +949,7 @@ async fn delete_filehost<M>(
 
 #[derive(Serialize)]
 struct ResponseConfigurationCreateFile {
+    ok: bool,
     file_id: String,
     key_id: String,
 }
@@ -998,7 +999,7 @@ async fn configuration_create_file<M>(
         None
     ).await?;
 
-    let response = ResponseConfigurationCreateFile { file_id, key_id };
+    let response = ResponseConfigurationCreateFile { ok: true, file_id, key_id };
     outbound.respond(wrapper.delivery_info, response).await
 }
 
