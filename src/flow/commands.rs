@@ -522,6 +522,11 @@ pub async fn process_transaction<M>(
         TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_UPDATE => update_filehost(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_DELETE => delete_filehost(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_CONFIGURATION_CREATE_FILE => configuration_create_file(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_CONFIGURATION_UPDATE_FILE => configuration_update_file(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_CONFIGURATION_DELETE_FILE => configuration_delete_file(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_CONFIGURATION_SET_PROPERTY => configuration_set_property(mongo, outbound, transaction, wrapper).await,
+        TRANSACTION_CONFIGURATION_DELETE_PROPERTY => configuration_delete_property(mongo, outbound, transaction, wrapper).await,
         _ => {
             info!("Unknown action {} for process_transaction, skipping", action);
             Ok(())
@@ -938,4 +943,54 @@ async fn delete_filehost<M>(
 
     // Respond
     outbound.respond(delivery_info, ErrorMessage::ok()).await
+}
+
+async fn configuration_create_file<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_update_file<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_delete_file<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_set_property<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_delete_property<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    transaction: &TopologyTransactionService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    // let mut transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
 }

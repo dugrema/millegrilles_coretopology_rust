@@ -47,7 +47,8 @@ pub async fn process_request<M>(
         REQUETE_GET_FILECONTROLERS => request_filecontrolers(mongo, outbound, wrapper).await,
         REQUETE_GET_FILEHOST_FOR_INSTANCE => request_filehost_for_instance(mongo, outbound, wrapper).await,
         REQUETE_GET_DOMAINS_BACKUP_VERSIONS => request_domains_backup_versions(mongo, outbound, wrapper).await,
-
+        REQUEST_CONFIGURATION_GET_FILES => request_configuration_get_files(mongo, outbound, wrapper).await,
+        REQUEST_CONFIGURATION_GET_PROPERTIES => request_configuration_get_properties(mongo, outbound, wrapper).await,
         _ => {
             info!("Unknown action {} for process_requests, skipping", action);
             Ok(())
@@ -606,4 +607,20 @@ async fn request_domains_backup_versions<M>(
 
     let response = ResponseDomainsBackupVersion {ok: true, domains: list};
     outbound.respond(wrapper.delivery_info, response).await
+}
+
+async fn request_configuration_get_files<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
+}
+
+async fn request_configuration_get_properties<M>(
+    mongo: &M,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> where M: MongoDaoTyped {
+    todo!()
 }

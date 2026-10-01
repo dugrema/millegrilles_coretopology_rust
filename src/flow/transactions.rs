@@ -67,6 +67,11 @@ impl TransactionRouter for TopologyTransactionRouter {
             TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_UPDATE => update_filehost(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_DELETE => delete_filehost(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_CONFIGURATION_CREATE_FILE => configuration_create_file(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_CONFIGURATION_UPDATE_FILE => configuration_update_file(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_CONFIGURATION_DELETE_FILE => configuration_delete_file(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_CONFIGURATION_SET_PROPERTY => configuration_set_property(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_CONFIGURATION_DELETE_PROPERTY => configuration_delete_property(self.mongo.as_ref(), wrapper).await,
 
             // Obsolete
             TRANSACTION_FILEHOST_ADD => obsolete(TRANSACTION_FILEHOST_ADD),
@@ -289,4 +294,49 @@ async fn delete_filehost<M>(
     aggregator.ordered = Some(ordered);
 
     Ok(aggregator)
+}
+
+async fn configuration_create_file<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+{
+    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_update_file<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+{
+    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_delete_file<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+{
+    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_set_property<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+{
+    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
+}
+
+async fn configuration_delete_property<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+{
+    // let transaction_value: FilehostDeleteTransaction = wrapper.message.deserialize()?;
+    todo!()
 }
