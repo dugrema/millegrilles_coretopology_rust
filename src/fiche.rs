@@ -172,14 +172,14 @@ where
         }
     }
 
-    let enveloppe = config.get_configuration_pki().get_enveloppe_privee().enveloppe_pub.clone();
-    let idmg = enveloppe.idmg()?;
-    let ca_pem = enveloppe.ca_pem()?;
+    let enveloppe = config.get_configuration_pki().get_enveloppe_privee();
+    let idmg = enveloppe.enveloppe_pub.idmg()?;
+    let ca_pem = enveloppe.enveloppe_ca.chaine_pem()?.remove(0);
 
     let fiche = FichePublique {
         applications_v2,
         chiffrage: Some(chiffrage),
-        ca: ca_pem,
+        ca: Some(ca_pem),
         idmg,
         instances,
     };

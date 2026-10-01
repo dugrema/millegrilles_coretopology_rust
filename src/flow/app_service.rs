@@ -20,13 +20,15 @@ use millegrilles_common_rust::v3::facades::message_inbound::MessageInboundValida
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::impls::backup_restorer::RestorationState;
 use millegrilles_common_rust::v3::impls::messaging_service::MessagingServiceImpl;
-use millegrilles_common_rust::v3::{BackupService, ChiffrageService, ConfigService};
+use millegrilles_common_rust::v3::{BackupService, ChiffrageService, ConfigService, FormatService, MessagingService};
 use std::sync::Arc;
 
 /// Handles queue consumer threads, calls individual routing methods
 pub struct ApplicationService {
     config: Arc<dyn ConfigService>,
     chiffrage: Arc<dyn ChiffrageService>,
+    format: Arc<dyn FormatService>,
+    messaging: Arc<dyn MessagingService>,
     outbound: Arc<MessageOutboundFacade>,
     transaction: Arc<TopologyTransactionService>,
     mongo: Arc<MongoDaoImpl>,
@@ -37,6 +39,8 @@ impl ApplicationService {
     pub fn new(
         config: Arc<dyn ConfigService>,
         chiffrage: Arc<dyn ChiffrageService>,
+        format: Arc<dyn FormatService>,
+        messaging: Arc<dyn MessagingService>,
         outbound: Arc<MessageOutboundFacade>,
         transaction: Arc<TopologyTransactionService>,
         mongo: Arc<MongoDaoImpl>,
@@ -45,6 +49,8 @@ impl ApplicationService {
         Self {
             config,
             chiffrage,
+            format,
+            messaging,
             outbound,
             transaction,
             mongo,
@@ -138,6 +144,8 @@ impl ApplicationService {
                         self.outbound.as_ref(),
                         self.config.as_ref(),
                         self.chiffrage.as_ref(),
+                        self.format.as_ref(),
+                        self.messaging.as_ref(),
                         message
                     ).await {
                         error!("Request {:?} failed: {}", routing, e);

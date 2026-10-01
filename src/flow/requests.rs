@@ -11,8 +11,11 @@ use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use millegrilles_common_rust::serde::{Serialize, Deserialize};
+use millegrilles_common_rust::{millegrilles_cryptographie, serde_json};
+use millegrilles_common_rust::generateur_messages::{RoutageMessageAction, RoutageMessageReponse};
 use millegrilles_common_rust::tokio_stream::StreamExt;
-use millegrilles_common_rust::v3::{ChiffrageService, ConfigService};
+use millegrilles_common_rust::v3::{ChiffrageService, ConfigService, FormatService, MessagingService};
+use crate::constants::DOMAIN_NAME;
 use crate::fiche::generer_contenu_fiche_publique;
 use crate::models::*;
 
@@ -21,6 +24,8 @@ pub async fn process_request<M>(
     outbound: &MessageOutboundFacade,
     config: &dyn ConfigService,
     chiffrage: &dyn ChiffrageService,
+    format: &dyn FormatService,
+    messaging: &dyn MessagingService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where
     M: MongoDaoTyped,
@@ -37,7 +42,7 @@ pub async fn process_request<M>(
         REQUETE_CONFIGURATION_FILEHOSTS => request_filehost_configuration(mongo, outbound, wrapper).await,
         REQUEST_FILEHOSTS_FOR_FUUIDS => request_filehosts_for_fuuid(mongo, outbound, wrapper).await,
         REQUETE_USERAPPS_DEPLOYEES_V2 => request_deployed_userapps_v2(mongo, outbound, wrapper).await,
-        REQUETE_FICHE_MILLEGRILLE => request_millegrille_fiche(mongo, config, chiffrage, outbound, wrapper).await,
+        REQUETE_FICHE_MILLEGRILLE => request_millegrille_fiche(mongo, config, chiffrage, format, messaging, outbound, wrapper).await,
         REQUETE_GET_FILEHOSTS => request_filehosts(mongo, outbound, wrapper).await,
         REQUETE_GET_FILECONTROLERS => request_filecontrolers(mongo, outbound, wrapper).await,
         REQUETE_GET_FILEHOST_FOR_INSTANCE => request_filehost_for_instance(mongo, outbound, wrapper).await,
@@ -362,6 +367,8 @@ async fn request_millegrille_fiche<M>(
     mongo: &M,
     config: &dyn ConfigService,
     chiffrage: &dyn ChiffrageService,
+    format: &dyn FormatService,
+    messaging: &dyn MessagingService,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
@@ -373,7 +380,26 @@ async fn request_millegrille_fiche<M>(
 
     // Todo: repondre avec message sous forme de commande, Action=fichePublique
     let response = generer_contenu_fiche_publique(mongo, config, chiffrage).await?;
-    outbound.respond(wrapper.delivery_info, response).await
+
+    let routing = RoutageMessageAction::builder(
+        DOMAIN_NAME,
+        "fichePublique",
+        vec![]
+    ).build();
+    let (signed_command, _id) = format.build_action_message(
+        millegrilles_cryptographie::messages_structs::MessageKind::Commande,
+        &routing,
+        serde_json::to_value(response)?
+    )?;
+    let basic_properties = &wrapper.delivery_info.properties;
+    let (reply_to, correlation_id) = match (basic_properties.reply_to(), basic_properties.correlation_id()) {
+        (Some(reply_to), Some(correlation_id)) => (reply_to.to_string(), correlation_id.to_string()),
+        _ => return Err(CommonError::Str("Missing reply_to/correlation_id properties on fiche request"))
+    };
+    let response_routing = RoutageMessageReponse::new(reply_to, correlation_id);
+    messaging.respond(signed_command, response_routing).await?;
+
+    Ok(())
 }
 
 #[derive(Deserialize)]
