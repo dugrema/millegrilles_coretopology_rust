@@ -28,7 +28,7 @@ services:
       - CAFILE=/run/secrets/millegrille.cert.pem
       - MG_REDIS_URL=rediss://client_rust@redis:6379#insecure
       - MG_REDIS_PASSWORD_FILE=/run/secrets/redis.txt
-      - RUST_LOG=error,millegrilles_common_rust=warn,millegrilles_corepki_rust=info
+      - RUST_LOG=error,millegrilles_common_rust=warn,millegrilles_coretopology_rust=info
     volumes:
       - ${MILLEGRILLES_ROOT}/var/backup/domains:/var/opt/millegrilles/archives
     deploy:
