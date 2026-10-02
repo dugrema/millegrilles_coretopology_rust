@@ -4,7 +4,7 @@ use millegrilles_common_rust::chiffrage_cle::CleChiffrageHandlerImpl;
 use millegrilles_common_rust::configuration::{charger_configuration, charger_configuration_mongo, ConfigMessages, ConfigDb};
 use millegrilles_common_rust::openssl::pkey::{PKey, Private};
 use millegrilles_common_rust::error::Error as CommonError;
-use millegrilles_common_rust::mongo_dao::initialiser;
+use millegrilles_common_rust::mongo_dao::{initialiser, initialiser_v3};
 use millegrilles_common_rust::tokio::task::JoinSet;
 use millegrilles_common_rust::tokio_util::sync::CancellationToken;
 use millegrilles_common_rust::tracing::{debug, info};
@@ -42,8 +42,9 @@ impl AppContext {
         let messaging = Arc::new(MessagingServiceImpl::new(config.clone(), security.clone()));
         let format = Arc::new(FormatServiceImpl::new(config.clone()));
 
+        info!("Connecting to mongo");
         let mongo = Arc::new(
-            initialiser(config.get_configuration_pki(), config.get_configuraiton_mongo())?
+            initialiser_v3(config.as_ref(), config.get_configuraiton_mongo()).await?
         );
 
         // Facades
