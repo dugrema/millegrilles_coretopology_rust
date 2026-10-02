@@ -9,12 +9,12 @@ use millegrilles_common_rust::certificats::VerificateurPermissions;
 use millegrilles_common_rust::chrono::serde::ts_seconds;
 use millegrilles_common_rust::chrono::{DateTime, Duration, Utc};
 use millegrilles_common_rust::constantes::*;
-use millegrilles_common_rust::error::Error as CommonError;
+use millegrilles_common_rust::error::{Error as CommonError, Error};
 use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
 use millegrilles_common_rust::mongodb::Cursor;
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
-use millegrilles_common_rust::serde_json;
+use millegrilles_common_rust::{bson, serde_json};
 use millegrilles_common_rust::serde_json::Value;
 use millegrilles_common_rust::tokio_stream::StreamExt;
 use millegrilles_common_rust::tracing::{debug, error, info, warn};
@@ -23,6 +23,7 @@ use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFaca
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use std::collections::{HashMap, HashSet};
 use millegrilles_common_rust::millegrilles_cryptographie::messages_structs::MessageKind;
+use millegrilles_common_rust::mongodb::options::{UpdateOneModel, WriteModel};
 use millegrilles_common_rust::v3::ChiffrageService;
 
 pub async fn process_command<M>(
@@ -146,93 +147,88 @@ async fn claim_filehost_visits_for_fuuids<M>(
         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(403, "Access denied")).await
     }
 
-    let estampille_date = wrapper.message.estampille.clone();
     let requete: RequeteGetVisitesFuuids = wrapper.message.deserialize()?;
+    // The request may have fuuids duplication.
+    let fuuids_set: HashSet<String> = HashSet::from_iter(requete.fuuids.into_iter());
+    let fuuids: Vec<String> = fuuids_set.into_iter().collect();
 
-    let mut fuuids_set = HashSet::new();
-    fuuids_set.extend(requete.fuuids.iter());
-    // let mut response_fuuids: HashMap<String, RowFuuidVisitResponse> = HashMap::new();
-    let mut response_fuuids: Vec<FuuidVisitResponseItem> = Vec::new();
-    let mut new_claims_fuuids: Vec<RowFilehostFuuid> = Vec::new();
+    // Claim all listed fuuids, add ones that are missing (new)
+    add_claims_and_missing_fuuids(mongo, &wrapper, &fuuids).await?;
 
-    let filtre = doc! {"fuuid": {"$in": &requete.fuuids}};
-    let collection = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
-    let mut curseur = collection.find(filtre).await?;
-    while let Some(row) = curseur.next().await {
-        let row = row?;
-
-        // Keep as new claim if claim date is null. Triggers the transfer when appropriate
-        if row.last_claim_date.is_none() {
-            new_claims_fuuids.push(row.clone());
-        }
-
-        fuuids_set.remove(&row.fuuid);
-        response_fuuids.push(row.into());
-    }
-
-    // Dedupe fuuids
-    let mut fuuids_requis = HashSet::new();
-    for f in &requete.fuuids {
-        fuuids_requis.insert(f);
-    }
-
-    // Save in the claims aggregation table
-    {
-        let now = Utc::now();
-        let mut batch = Vec::new();
-        let extensions = wrapper.certificate.extensions()?;
-        let domains = extensions.domaines;
-        if ! fuuids_requis.is_empty() {
-            for fuuid in &fuuids_requis {
-                batch.push(doc! {"fuuid": *fuuid, "claim_date": &now, "domains": &domains})
-            }
-            let collection_agg_claim = mongo.get_collection(COLLECTION_FILEHOSTING_CLAIMS)?;
-            collection_agg_claim.insert_many(batch).await?;
+    // Update file transfers with the listed fuuids
+    let mut session = mongo.get_session().await?;
+    session.start_transaction().await?;
+    match add_missing_file_transfers(mongo, outbound, &mut session, &fuuids).await {
+        Ok(()) => session.commit_transaction().await?,
+        Err(e) => {
+            session.abort_transaction().await?;
+            return Err(e);
         }
     }
 
-    // Conserver les reclamations.
-    let collection_claims = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
-    let filtre_reclamations = doc!{ "fuuid": {"$in": &requete.fuuids} };
-    let ops_reclamations = doc! {"$currentDate": {FIELD_LAST_CLAIM_DATE: true}};
-    let update_result = collection_claims.update_many(filtre_reclamations.clone(), ops_reclamations).await?;
-    if update_result.matched_count as usize != fuuids_requis.len() {
-        info!("Mismatch updates {} et claims {}. Inserer nouveaux claims.", requete.fuuids.len(), update_result.matched_count);
-        let mut curseur = collection_claims
-            .find(filtre_reclamations)
-            .projection(doc!{"fuuid": 1})
-            .await?;
-        while curseur.advance().await? {
-            let row = curseur.deserialize_current()?;
-            fuuids_requis.remove(&row.fuuid);
-        }
-
-        if ! fuuids_requis.is_empty() {
-            let mut rows = Vec::new();
-            for f in fuuids_requis {
-                debug!("Ajouter nouveau fuuid reclame {}", f);
-                let row = RowFilehostFuuid { fuuid: f.to_owned(), last_claim_date: Some(estampille_date.to_owned()), filehost: Some(HashMap::new()) };
-                rows.push(row);
-            }
-            let collection_insert_claims =
-                mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
-            collection_insert_claims.insert_many(rows).await?;
-        }
+    // Gather all rows and visit information from requested fuuids
+    let mut response_fuuids = Vec::with_capacity(fuuids.len());
+    let collection_fuuids = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
+    let mut cursor = collection_fuuids.find(doc! { "fuuid": {"$in": &fuuids }}).await?;
+    while let Some(row) = cursor.next().await {
+        response_fuuids.push(row?.into());
     }
 
     let response = ResponseGetVisitesFuuids {
         ok: true,
         visits: response_fuuids,
-        unknown: Vec::from_iter(fuuids_set.into_iter().map(|f|f.to_string())),
+        unknown: vec![],
         done: None,  // Not batching
     };
 
-    // Mettre a jour tous les transferts de fichier
-    let mut session = mongo.get_session().await?;
-    session.start_transaction().await?;
-    add_missing_file_transfers(mongo, outbound, &mut session, new_claims_fuuids).await?;
-
     outbound.respond(wrapper.delivery_info, response).await
+}
+
+async fn add_claims_and_missing_fuuids<M>(
+    mongo: &M,
+    wrapper: &MessageValidated,
+    fuuids: &Vec<String>
+) -> Result<(), Error> where M: MongoDaoTyped {
+    // Remove all fuuid duplicates
+    let collection_fuuids = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
+
+    // Update existing fuuids with new claim date
+    let filtre_reclamations = doc! { "fuuid": {"$in": &fuuids} };
+    let ops_reclamations = doc! {"$currentDate": { FIELD_LAST_CLAIM_DATE: true }};
+    let update_result = collection_fuuids.update_many(filtre_reclamations.clone(), ops_reclamations).await?;
+
+    if update_result.matched_count as usize != fuuids.len() {
+        info!("Mismatch in updates existing fuuids {} and claimed fuuids {}. Insert new fuuids.",
+            fuuids.len(),
+            update_result.matched_count
+        );
+
+        let mut models_batch = Vec::new();
+        let estampille_date = &wrapper.message.estampille;
+        for fuuid in fuuids {
+            let row = RowFilehostFuuid {
+                fuuid: fuuid.to_string(),
+                last_claim_date: Some(estampille_date.to_owned()),
+                filehost: Some(HashMap::new())
+            };
+            let ops = doc!{"$setOnInsert": bson::serialize_to_document(&row)?};
+            let filter = doc! { "fuuid": fuuid };
+            let update_model_file = WriteModel::UpdateOne(
+                UpdateOneModel::builder()
+                    .namespace(collection_fuuids.namespace())
+                    .upsert(true)
+                    .filter(filter)
+                    .update(ops)
+                    .build()
+            );
+            models_batch.push(update_model_file);
+        }
+        if ! models_batch.is_empty() {
+            mongo.bulk_write(models_batch, None, false).await?;
+        }
+    }
+
+    Ok(())
 }
 
 async fn filehost_reset_visits_claims<M>(

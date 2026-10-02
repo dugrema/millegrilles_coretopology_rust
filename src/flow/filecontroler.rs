@@ -12,13 +12,14 @@ use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
 use millegrilles_common_rust::mongo_dao::{ChampIndex, IndexOptions, MongoDaoTyped};
 use millegrilles_common_rust::mongo_serde::option_chrono_04_datetime;
 use millegrilles_common_rust::mongodb::ClientSession;
-use millegrilles_common_rust::mongodb::options::Hint;
+use millegrilles_common_rust::mongodb::options::{Hint, UpdateOneModel, WriteModel};
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
 use millegrilles_common_rust::tracing::{debug, error, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use std::collections::{HashMap, HashSet};
+use millegrilles_common_rust::tokio_stream::StreamExt;
 
 pub async fn process_filecontroler_events<M>(
     mongo: &M,
@@ -386,66 +387,84 @@ pub async fn entretien_transfert_fichiers<M>(
     Ok(())
 }
 
+/// Returns the list of active filehost_ids
+async fn get_active_filehosts<M>(mongo: &M) -> Result<Vec<String>, CommonError> where M: MongoDaoTyped {
+    let collection_filehosts =
+        mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
+    let filtre = doc!{"sync_active": true, "deleted": false};
+    let mut cursor = collection_filehosts.find(filtre).await?;
+    let mut filehosts_active = HashSet::new();
+    while cursor.advance().await? {
+        let row = cursor.deserialize_current()?;
+        filehosts_active.insert(row.filehost_id.clone());
+    }
+
+    Ok(filehosts_active.into_iter().collect())
+}
+
 pub async fn add_missing_file_transfers<M>(
     mongo: &M,
     outbound: &MessageOutboundFacade,
     session: &mut ClientSession,
-    new_claims: Vec<RowFilehostFuuid>
+    fuuids: &Vec<String>
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     // Get active filehosts
-    let filehosts_active = {
-        let collection_filehosts =
-            mongo.get_collection_typed::<FilehostServerRow>(COLLECTION_FILEHOSTS)?;
-        let filtre = doc!{"sync_active": true, "deleted": false};
-        let mut cursor = collection_filehosts.find(filtre).await?;
+    let active_filehosts = get_active_filehosts(mongo).await?;
 
-        let mut filehosts_active = HashSet::new();
-        while cursor.advance().await? {
-            let row = cursor.deserialize_current()?;
-            filehosts_active.insert(row.filehost_id.clone());
-        }
-        filehosts_active
-    };
+    let collection_fuuids = mongo.get_collection_typed::<RowFilehostFuuid>(COLLECTION_FILEHOSTING_FUUIDS)?;
+    let collection_transfers =
+        mongo.get_collection_typed::<FilehostTransfer>(COLLECTION_FILEHOSTING_TRANSFERS)?;
 
-    for claim in new_claims {
-        let mut missing_from = Vec::new();
-        // Find all filehost_ids this file is missing from
-        match claim.filehost {
+    let mut op_models = vec![];
+    let mut cursor = collection_fuuids.find(doc!{"fuuid": {"$in": fuuids}}).await?;
+    while let Some(row) = cursor.next().await {
+        let row = row?;
+        
+        // Check presence on each filehost, add a transfer item when missing
+        let mut missing_from = HashSet::new();
+        match row.filehost {
             Some(visits) => {
-                for filehost in &filehosts_active {
+                for filehost in &active_filehosts {
                     if visits.get(filehost).is_none() {
-                        missing_from.push(filehost.clone());
+                        missing_from.insert(filehost.clone());
                     }
                 }
             }
-            None => {
-                for filehost in &filehosts_active {
-                    missing_from.push(filehost.clone());
-                }
-            }
-        };
-
-        let mut transfers_to_add = Vec::new();
+            None => missing_from.extend(active_filehosts.clone()),
+        }
+        
         for filehost_id in missing_from {
-            debug!("Create missing file transfer for fuuid:{} on filehost_id:{}", claim.fuuid, filehost_id);
+            debug!("Create missing file transfer for fuuid:{} on filehost_id:{}", row.fuuid, filehost_id);
             let transfer = FilehostTransfer {
-                destination_filehost_id: filehost_id,
-                fuuid: claim.fuuid.clone(),
+                destination_filehost_id: filehost_id.clone(),
+                fuuid: row.fuuid.clone(),
                 created: Utc::now(),
                 modified: Utc::now(),
                 job_picked_up: None,
             };
-            transfers_to_add.push(transfer);
-        }
-        if ! transfers_to_add.is_empty() {
-            let collection_transfers =
-                mongo.get_collection_typed::<FilehostTransfer>(COLLECTION_FILEHOSTING_TRANSFERS)?;
-            collection_transfers.insert_many(transfers_to_add).session(&mut *session).await?;
+            // transfers_to_add.push(transfer);
+            let filter = doc!{"destination_filehost_id": &filehost_id, "fuuid": &row.fuuid};
+            let ops = doc! {"$setOnInsert": bson::serialize_to_document(&transfer)?};
+            let update_model_file = WriteModel::UpdateOne(
+                UpdateOneModel::builder()
+                    .namespace(collection_transfers.namespace())
+                    .upsert(true)
+                    .filter(filter)
+                    .update(ops)
+                    .build()
+            );
+            op_models.push(update_model_file);
         }
     }
 
+    if ! op_models.is_empty() {
+        mongo.bulk_write(op_models, Some(session), false).await?;
+    }
+
     // Tell filecontroler that new transfers are available
-    emit_filehost_transfersupdated_event(outbound).await?;
+    if let Err(e) = emit_filehost_transfersupdated_event(outbound).await {
+        warn!("Error in emit_filehost_transfersupdated_event: {:?}", e);
+    }
 
     Ok(())
 }
