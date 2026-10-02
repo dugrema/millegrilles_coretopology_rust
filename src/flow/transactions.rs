@@ -81,6 +81,7 @@ impl TransactionRouter for TopologyTransactionRouter {
             TRANSACTION_MONITOR => obsolete(TRANSACTION_MONITOR),
             TRANSACTION_SUPPRIMER_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_INSTANCE),
             TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE),
+            TRANSACTION_FILEHOST_RESTORE => obsolete(TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE),
 
             _ => Err(CommonError::Str("Unknown transaction action"))
         }
