@@ -76,6 +76,7 @@ pub const EVENEMENT_FILEHOST_EVENTNEW: &str = "new";
 pub const EVENEMENT_FILEHOST_EVENTUPDATE: &str = "update";
 pub const EVENEMENT_FILEHOST_EVENTDELETE: &str = "delete";
 pub const EVENEMENT_FICHE_PUBLIQUE: &str = "fichePublique";
+pub const EVENT_CONFIGURATION_FILE: &str = "configurationFile";
 
 
 pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {

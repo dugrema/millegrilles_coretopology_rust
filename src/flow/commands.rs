@@ -984,6 +984,7 @@ async fn configuration_create_file<M>(
     debug!("Saving new key {}", key_id);
     outbound.save_keys(&vec![&new_key], Some(5_000)).await?;
 
+    let filename = command.filename.clone();
     let transaction_value = TransactionCreateConfigurationFile {
         filename: command.filename,
         roles: command.roles,
@@ -998,6 +999,9 @@ async fn configuration_create_file<M>(
         serde_json::to_value(transaction_value)?,
         None
     ).await?;
+
+    // Emit event
+    emit_configuration_file_event(outbound, file_id.as_str(), filename.as_str(), "created").await?;
 
     let response = ResponseConfigurationCreateFile { ok: true, file_id, key_id };
     outbound.respond(wrapper.delivery_info, response).await
@@ -1024,17 +1028,20 @@ async fn configuration_update_file<M>(
     }
 
     // Check if the configuration file exists, by name.
-    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
-    let result = collection
+    let collection = mongo.get_collection_typed::<ConfigurationFileRow>(COLLECTION_CONFIGURATION_FILES)?;
+    let configuration_file = match collection
         .find_one(doc!{"file_id": &transaction_value.file_id})
-        .projection(doc!{"file_id": true})
-        .await?;
-    if result.is_none() {
-        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
-    }
+        .await?
+    {
+        Some(file) => file,
+        None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    };
 
     let delivery_info = wrapper.delivery_info.clone();
     transaction.process_transaction(wrapper.into(), None).await?;
+
+    // Emit event
+    emit_configuration_file_event(outbound, configuration_file.file_id.as_str(), configuration_file.filename.as_str(), "updated").await?;
 
     outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
@@ -1052,17 +1059,20 @@ async fn configuration_delete_file<M>(
     }
 
     // Check if the configuration file exists, by name.
-    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
-    let result = collection
+    let collection = mongo.get_collection_typed::<ConfigurationFileRow>(COLLECTION_CONFIGURATION_FILES)?;
+    let configuration_file = match collection
         .find_one(doc!{"file_id": &transaction_value.file_id})
-        .projection(doc!{"file_id": true})
-        .await?;
-    if result.is_none() {
-        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
-    }
+        .await?
+    {
+        Some(file) => file,
+        None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    };
 
     let delivery_info = wrapper.delivery_info.clone();
     transaction.process_transaction(wrapper.into(), None).await?;
+
+    // Emit event
+    emit_configuration_file_event(outbound, configuration_file.file_id.as_str(), configuration_file.filename.as_str(), "deleted").await?;
 
     outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
@@ -1080,17 +1090,20 @@ async fn configuration_set_property<M>(
     }
 
     // Check if the configuration file exists, by id. Do not set property for non-existant file.
-    let collection = mongo.get_collection(COLLECTION_CONFIGURATION_FILES)?;
-    let result = collection
+    let collection = mongo.get_collection_typed::<ConfigurationFileRow>(COLLECTION_CONFIGURATION_FILES)?;
+    let configuration_file = match collection
         .find_one(doc!{"file_id": &transaction_value.file_id})
-        .projection(doc!{"file_id": true})
-        .await?;
-    if result.is_none() {
-        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
-    }
+        .await?
+    {
+        Some(file) => file,
+        None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    };
 
     let delivery_info = wrapper.delivery_info.clone();
     transaction.process_transaction(wrapper.into(), None).await?;
+
+    // Emit event
+    emit_configuration_file_event(outbound, configuration_file.file_id.as_str(), configuration_file.filename.as_str(), "updated").await?;
 
     outbound.respond(delivery_info, ErrorMessage::ok()).await
 }
@@ -1107,17 +1120,48 @@ async fn configuration_delete_property<M>(
         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
     }
 
+    let collection = mongo.get_collection_typed::<ConfigurationFileRow>(COLLECTION_CONFIGURATION_FILES)?;
+    let configuration_file = match collection
+        .find_one(doc!{"file_id": &transaction_value.file_id})
+        .await?
+    {
+        Some(file) => file,
+        None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+    };
+
     let collection = mongo.get_collection(COLLECTION_CONFIGURATION_PROPERTIES)?;
     let result = collection
         .find_one(doc!{"file_id": &transaction_value.file_id, "key": &transaction_value.key})
         .projection(doc!{"_id": true})
         .await?;
     if result.is_none() {
-        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File property not found")).await
     }
 
     let delivery_info = wrapper.delivery_info.clone();
     transaction.process_transaction(wrapper.into(), None).await?;
 
+    // Emit event (file updated, no event for specific properties)
+    emit_configuration_file_event(outbound, configuration_file.file_id.as_str(), configuration_file.filename.as_str(), "updated").await?;
+
     outbound.respond(delivery_info, ErrorMessage::ok()).await
+}
+
+async fn emit_configuration_file_event(
+    outbound: &MessageOutboundFacade,
+    file_id: &str,
+    filename: &str,
+    event: &str
+) -> Result<(), CommonError> {
+    let event = ConfigurationFileEvent {
+        file_id: file_id.to_string(),
+        filename: filename.to_string(),
+        event: Some(event.to_string()),
+    };
+    let routing = RoutageMessageAction::builder(
+        DOMAIN_NAME,
+        EVENT_CONFIGURATION_FILE,
+        vec![Securite::L1Public]
+    ).build();
+    outbound.emit_event(routing, event).await
 }

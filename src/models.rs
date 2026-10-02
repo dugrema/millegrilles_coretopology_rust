@@ -600,3 +600,10 @@ pub struct TransactionDeleteFileProperty {
     pub file_id: String,
     pub key: String,
 }
+
+#[derive(Serialize)]
+pub struct ConfigurationFileEvent {
+    pub file_id: String,
+    pub filename: String,
+    pub event: Option<String>,
+}

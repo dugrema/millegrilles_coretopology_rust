@@ -658,6 +658,12 @@ struct RequestConfigurationGetProperties {
 struct ResponseConfigurationGetProperties {
     file_id: String,
     filename: String,
+    /// Roles, sent for admin requests (when key requested)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    roles: Option<Vec<String>>,
+    /// Domains, sent for admin requests (when key requested)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    domains: Option<Vec<String>>,
     /// Decryption key id (keymaster ref)
     key_id: String,
     /// Last modification of either file or any properties in the list
@@ -704,11 +710,11 @@ async fn request_configuration_get_properties<M>(
 
     // Check authorization to get these properties
     let mut authorized = is_admin;  // Admin always authorized
-    if ! authorized && let Some(roles) = file.roles {
+    if ! authorized && let Some(roles) = file.roles.clone() {
         // Check that any one of these roles is in the certificate
         authorized = certificate.verifier_roles_string(roles)?;
     }
-    if ! authorized && let Some(domains) = file.domains {
+    if ! authorized && let Some(domains) = file.domains.clone() {
         // Check that any one of these domains is in the certificate
         authorized = certificate.verifier_domaines(domains)?;
     }
@@ -781,6 +787,8 @@ async fn request_configuration_get_properties<M>(
     let mut response = ResponseConfigurationGetProperties {
         file_id: file.file_id,
         filename: file.filename,
+        roles: None,
+        domains: None,
         key_id: file.key_id,
         last_modified,
         list,
@@ -791,6 +799,9 @@ async fn request_configuration_get_properties<M>(
     if is_admin && request.send_key == Some(true) {
         // The user is an admin and is requesting the key
         response.secret_key = Some(base64.encode(&key.secret.0));
+        // Also send additional values for editing
+        response.roles = file.roles;
+        response.domains = file.domains;
     }
 
     // Respond with transparent encryption. This will compress and encrypt the reply.
