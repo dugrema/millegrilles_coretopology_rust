@@ -432,6 +432,13 @@ pub struct TransactionDeleteDomain {
 }
 
 #[derive(Deserialize)]
+pub struct FilehostAddTransaction {
+    pub tls_external: Option<String>,
+    pub url_external: Option<String>,
+    pub url_internal: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct FilehostAddTransactionV2 {
     pub instance_id: Option<String>,
     pub tls_external: Option<String>,

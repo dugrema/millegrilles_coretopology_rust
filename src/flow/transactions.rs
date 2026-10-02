@@ -10,8 +10,9 @@ use millegrilles_common_rust::v3::{ConfigService, FormatService, TransactionRout
 use std::sync::Arc;
 use millegrilles_common_rust::bson;
 use millegrilles_common_rust::bson::doc;
+use millegrilles_common_rust::certificats::VerificateurPermissions;
 use millegrilles_common_rust::chrono::Utc;
-use millegrilles_common_rust::constantes::CHAMP_MODIFICATION;
+use millegrilles_common_rust::constantes::{Securite, CHAMP_MODIFICATION};
 use millegrilles_common_rust::mongodb::options::{DeleteManyModel, DeleteOneModel, UpdateOneModel, WriteModel};
 use millegrilles_common_rust::tracing::warn;
 use crate::external::mq::*;
@@ -75,8 +76,10 @@ impl TransactionRouter for TopologyTransactionRouter {
             TRANSACTION_CONFIGURATION_SET_PROPERTY => configuration_set_property(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_CONFIGURATION_DELETE_PROPERTY => configuration_delete_property(self.mongo.as_ref(), wrapper).await,
 
-            // Obsolete
-            TRANSACTION_FILEHOST_ADD => obsolete(TRANSACTION_FILEHOST_ADD),
+            // Obsolete - still supported for backup restoration
+            TRANSACTION_FILEHOST_ADD => add_filehost(self.mongo.as_ref(), wrapper).await,
+
+            // Obsolete and unsupported
             TRANSACTION_CONFIGURER_CONSIGNATION => obsolete(TRANSACTION_CONFIGURER_CONSIGNATION),
             TRANSACTION_SET_FICHIERS_PRIMAIRE => obsolete(TRANSACTION_SET_FICHIERS_PRIMAIRE),
             TRANSACTION_MONITOR => obsolete(TRANSACTION_MONITOR),
@@ -183,6 +186,58 @@ async fn add_filehost_v2<M>(
 
     let set_ops = doc! {
         "instance_id": transaction_value.instance_id,
+        "url_external": transaction_value.url_external,
+        "tls_external": transaction_value.tls_external,
+    };
+    let set_on_insert = doc! {
+        "deleted": false,
+        "sync_active": true,
+        "created": now.clone(),
+        "fuuid": None::<&str>,
+    };
+
+    let ops = doc! {
+        "$set": set_ops,
+        "$setOnInsert": set_on_insert,
+        "$currentDate": {"modified": true},
+    };
+
+    let filter = doc! {"filehost_id": &transaction_id};
+
+    let update_model_versions = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .upsert(true)
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_versions]);
+
+    Ok(aggregator)
+}
+
+async fn add_filehost<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped
+{
+    let transaction_value: FilehostAddTransaction = wrapper.message.deserialize()?;
+    let transaction_id = &wrapper.message.id.as_str();
+
+    let mut instance_id = None;
+    let certificate = wrapper.certificate.as_ref();
+    if certificate.verifier_exchanges(vec![Securite::L1Public])? && certificate.verifier_roles_string(vec!["filecontroler".to_string()])? {
+        instance_id = Some(certificate.get_common_name()?);
+    }
+
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTS)?;
+    let now = Utc::now();
+
+    let set_ops = doc! {
+        "instance_id": instance_id,
+        "url_internal": transaction_value.url_internal,
         "url_external": transaction_value.url_external,
         "tls_external": transaction_value.tls_external,
     };
