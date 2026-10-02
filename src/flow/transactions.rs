@@ -68,6 +68,7 @@ impl TransactionRouter for TopologyTransactionRouter {
             TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_UPDATE => update_filehost(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_DELETE => delete_filehost(self.mongo.as_ref(), wrapper).await,
+            TRANSACTION_FILEHOST_RESTORE => restore_filehost(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_CONFIGURATION_CREATE_FILE => configuration_create_file(wrapper).await,
             TRANSACTION_CONFIGURATION_UPDATE_FILE => configuration_update_file(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_CONFIGURATION_DELETE_FILE => configuration_delete_file(self.mongo.as_ref(), wrapper).await,
@@ -81,7 +82,6 @@ impl TransactionRouter for TopologyTransactionRouter {
             TRANSACTION_MONITOR => obsolete(TRANSACTION_MONITOR),
             TRANSACTION_SUPPRIMER_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_INSTANCE),
             TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE),
-            TRANSACTION_FILEHOST_RESTORE => obsolete(TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE),
 
             _ => Err(CommonError::Str("Unknown transaction action"))
         }
@@ -294,6 +294,31 @@ async fn delete_filehost<M>(
 
     let mut aggregator = TransactionOperationAggregator::new();
     aggregator.ordered = Some(ordered);
+
+    Ok(aggregator)
+}
+
+async fn restore_filehost<M>(
+    mongo: &M,
+    wrapper: TransactionWrapper,
+) -> Result<TransactionOperationAggregator, CommonError> where M: MongoDaoTyped {
+    let transaction_value: FilehostRestoreTransaction = wrapper.message.deserialize()?;
+    let collection = mongo.get_collection(COLLECTION_FILEHOSTS)?;
+    let filter = doc!{ "filehost_id": &transaction_value.filehost_id };
+    let ops = doc !{
+        "$set": {"deleted": false},
+        "$currentDate": {"modified": true},
+    };
+    let update_model_filehost = WriteModel::UpdateOne(
+        UpdateOneModel::builder()
+            .namespace(collection.namespace())
+            .filter(filter)
+            .update(ops)
+            .build()
+    );
+
+    let mut aggregator = TransactionOperationAggregator::new();
+    aggregator.ordered = Some(vec![update_model_filehost]);
 
     Ok(aggregator)
 }
