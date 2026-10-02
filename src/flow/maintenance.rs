@@ -23,7 +23,7 @@ pub async fn process_ticker_job<M>(
 ) -> Result<(), CommonError> where M: MongoDaoTyped {
     // Ensure this is an authorized module
     if let Err(e) = validate_ticker(&trigger).await {
-        error!("Invalid ticker message, rejecting: {}", e);
+        warn!("Invalid ticker message, rejecting: {}", e);
         return Ok(());
     }
 
