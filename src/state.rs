@@ -67,6 +67,8 @@ impl AppContext {
             COLLECTION_FILEHOSTINGCONFIGURATION.to_string(),
             COLLECTION_FILEHOSTS.to_string(),
             COLLECTION_INSTANCE_CONFIGURATION.to_string(),
+            COLLECTION_CONFIGURATION_FILES.to_string(),
+            COLLECTION_CONFIGURATION_PROPERTIES.to_string(),
         ];
         let backup = Arc::new(DomainBackupServiceImpl::new(
             config.clone(),
