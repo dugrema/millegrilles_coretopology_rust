@@ -133,7 +133,7 @@ pub async fn validate_ticker(trigger: &MessageValidated) -> Result<(), CommonErr
     }
     if trigger.message.estampille < Utc::now() - Duration::seconds(45) {
         debug!("Expired Ticker message, ignoring");
-        return Err(CommonError::Str("Ticker message without ticker (ceduleur) role, ignoring"));
+        return Err(CommonError::Str("Expired ticker message, ignoring"));
     }
     Ok(())
 }
