@@ -664,7 +664,7 @@ struct ResponseConfigurationGetProperties {
     #[serde(with="ts_milliseconds")]
     last_modified: DateTime<Utc>,
     /// Decrypted properties
-    list: Vec<ConfigurationValue>,
+    list: Vec<ConfigurationPropertyDecrypted>,
     /// Contains the unencrypted secret key.
     #[serde(skip_serializing_if = "Option::is_none")]
     secret_key: Option<String>,
@@ -696,7 +696,7 @@ async fn request_configuration_get_properties<M>(
             None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(400, "No file_id or filename provided")).await
         }
     };
-    
+
     let file = match collection_file.find_one(file_filter).await? {
         Some(file) => file,
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "File not found")).await
@@ -764,7 +764,13 @@ async fn request_configuration_get_properties<M>(
         // Decrypt
         let decrypted_value = row.value.decrypt_with_secret(&key.secret)?;
         let value: ConfigurationValue = serde_json::from_slice(&decrypted_value)?;
-        list.push(value);
+        let decrypted_property = ConfigurationPropertyDecrypted {
+            file_id: row.file_id,
+            key: row.key,
+            value,
+            last_modified: row.last_modified,
+        };
+        list.push(decrypted_property);
         if output_size > OUTPUT_SIZE_LIMIT {
             break;
         }

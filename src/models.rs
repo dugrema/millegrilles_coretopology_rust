@@ -527,6 +527,17 @@ pub struct ConfigurationPropertyRow {
     pub last_modified: DateTime<Utc>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ConfigurationPropertyDecrypted {
+    pub file_id: String,
+    /// Name of this property
+    pub key: String,
+    /// Encrypted values
+    pub value: ConfigurationValue,
+    #[serde(with="FromChrono04DateTime")]
+    pub last_modified: DateTime<Utc>,
+}
+
 /// Decrypted content of the configuration property value field.
 #[derive(Serialize, Deserialize)]
 pub struct ConfigurationValue {
