@@ -11,7 +11,6 @@ use millegrilles_common_rust::mongo_dao::MongoDao;
 use millegrilles_common_rust::serde::Deserialize;
 use millegrilles_common_rust::tracing::{debug, info, warn};
 use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
-use millegrilles_common_rust::serde_json;
 use std::collections::HashMap;
 
 pub async fn process_presence_event(
@@ -38,6 +37,7 @@ async fn event_presence_domain(
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> {
     let event: PresenceDomaine = wrapper.message.deserialize()?;
+    debug!("Event PresenceDomaine {:?}", event.domaine);
 
     let domain = match event.domaine.as_ref() {
         Some(d) => d,
@@ -66,7 +66,7 @@ async fn event_presence_domain(
         "$currentDate": {CHAMP_MODIFICATION: true}
     };
 
-    debug!("Document instance a sauvegarder : {:?}", ops);
+    // debug!("Document instance a sauvegarder : {:?}", ops);
 
     let collection = mongo.get_collection(COLLECTION_DOMAINS)?;
     if let Err(e) = collection.update_one(filtre, ops).upsert(true).await {
@@ -87,8 +87,9 @@ async fn event_presence_instance(
     mongo: &dyn MongoDao,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> {
-    debug!("event_presence_instance\n{}", serde_json::to_string(&wrapper.message)?);
+    // debug!("event_presence_instance\n{}", serde_json::to_string(&wrapper.message)?);
     let event: PresenceInstanceEventV2 = wrapper.message.deserialize()?;
+    debug!("event_presence_instance: {}", wrapper.certificate.get_common_name()?);
     if ! wrapper.certificate.verifier_roles(vec![RolesCertificats::Instance])? {
         warn!("process_presence_instance_v2 Rejecting message not from an instance manager");
         return Ok(())
@@ -170,6 +171,7 @@ async fn event_presence_applications(
     }
 
     let instance_id = wrapper.certificate.get_common_name()?;
+    debug!("event_presence_applications instance_id {}", instance_id);
 
     let securite = match wrapper.certificate.extensions() {
         Ok(e) => {

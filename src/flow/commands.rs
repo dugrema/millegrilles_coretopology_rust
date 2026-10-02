@@ -22,10 +22,12 @@ use millegrilles_common_rust::v3::facades::message_inbound::MessageValidated;
 use millegrilles_common_rust::v3::facades::message_outbound::MessageOutboundFacade;
 use millegrilles_common_rust::v3::models::ErrorMessage;
 use std::collections::{HashMap, HashSet};
+use millegrilles_common_rust::millegrilles_cryptographie::messages_structs::MessageKind;
 use millegrilles_common_rust::v3::ChiffrageService;
 
 pub async fn process_command<M>(
     mongo: &M,
+    chiffrage: &dyn ChiffrageService,
     outbound: &MessageOutboundFacade,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> where
@@ -35,20 +37,39 @@ pub async fn process_command<M>(
         Some(action) => action,
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in command")).await
     };
-    match action {
-        COMMANDE_SET_CLEID_BACKUP_DOMAINE => set_domain_backup_keyid(mongo, outbound, wrapper).await,
-        COMMANDE_CLAIM_AND_FILEHOST_VISITS_FOR_FUUIDS => claim_filehost_visits_for_fuuids(mongo, outbound, wrapper).await,
-        COMMANDE_FILEHOST_RESET_VISITS_CLAIMS => filehost_reset_visits_claims(mongo, outbound, wrapper).await,
-        COMMANDE_FILEHOST_RESET_TRANSFERS => filehost_reset_transfers(mongo, outbound, wrapper).await,
-        COMMANDE_BACKUP_SET_DOMAIN_VERSION => set_domain_backup_version(mongo, outbound, wrapper).await,
-        COMMAND_DOMAIN_CLAIM_FILES => domain_claim_files(mongo, outbound, wrapper).await,
-        COMMANDE_FILE_VISIT => file_visit(mongo, outbound, wrapper).await,
-        COMMANDE_FILEHOST_BATCH_TRANSFERS => filehost_batch_transfers(mongo, outbound, wrapper).await,
+
+    match wrapper.message.kind {
+        MessageKind::Commande => {
+            match action {
+                COMMANDE_SET_CLEID_BACKUP_DOMAINE => set_domain_backup_keyid(mongo, outbound, wrapper).await,
+                COMMANDE_CLAIM_AND_FILEHOST_VISITS_FOR_FUUIDS => claim_filehost_visits_for_fuuids(mongo, outbound, wrapper).await,
+                COMMANDE_FILEHOST_RESET_VISITS_CLAIMS => filehost_reset_visits_claims(mongo, outbound, wrapper).await,
+                COMMANDE_FILEHOST_RESET_TRANSFERS => filehost_reset_transfers(mongo, outbound, wrapper).await,
+                COMMANDE_BACKUP_SET_DOMAIN_VERSION => set_domain_backup_version(mongo, outbound, wrapper).await,
+                COMMAND_DOMAIN_CLAIM_FILES => domain_claim_files(mongo, outbound, wrapper).await,
+                COMMANDE_FILE_VISIT => file_visit(mongo, outbound, wrapper).await,
+                COMMANDE_FILEHOST_BATCH_TRANSFERS => filehost_batch_transfers(mongo, outbound, wrapper).await,
+                _ => {
+                    info!("Unknown command action {} in process_command, skipping", action);
+                    Ok(())
+                }
+            }
+        },
+        MessageKind::Evenement => {
+            match action {
+                EVENT_KEYMASTER_CERTIFICATE => save_keymaster_certificate(chiffrage, wrapper).await,
+                _ => {
+                    info!("Unknown event action {} in process_command, skipping", action);
+                    Ok(())
+                }
+            }
+        },
         _ => {
-            info!("Unknown action {} for process_command, skipping", action);
+            info!("Unhandled message type in volatile handler, action {}, skipping", action);
             Ok(())
         }
     }
+
 }
 
 #[derive(Deserialize)]
@@ -1164,4 +1185,15 @@ async fn emit_configuration_file_event(
         vec![Securite::L1Public]
     ).build();
     outbound.emit_event(routing, event).await
+}
+
+async fn save_keymaster_certificate(
+    chiffrage: &dyn ChiffrageService,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> {
+    debug!("Saving keymaster certificate for encryption/fiche");
+    if let Err(e) = chiffrage.add_encryption_publickey(wrapper.certificate) {
+        warn!("Error saving keymaster certificate: {:?}", e);
+    }
+    Ok(())
 }

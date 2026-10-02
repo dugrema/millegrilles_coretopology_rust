@@ -77,6 +77,7 @@ pub const EVENEMENT_FILEHOST_EVENTUPDATE: &str = "update";
 pub const EVENEMENT_FILEHOST_EVENTDELETE: &str = "delete";
 pub const EVENEMENT_FICHE_PUBLIQUE: &str = "fichePublique";
 pub const EVENT_CONFIGURATION_FILE: &str = "configurationFile";
+pub const EVENT_KEYMASTER_CERTIFICATE: &str = "certMaitreDesCles";
 
 
 pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
@@ -144,6 +145,9 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_FILEHOST_RESET_TRANSFERS), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_BACKUP_SET_DOMAIN_VERSION), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMAND_DOMAIN_CLAIM_FILES), exchange: Securite::L3Protege },
+
+                // Events
+                ConfigRoutingExchange { routing_key: format!("evenement.{}.{}", DOMAIN_KEYMASTER, EVENT_KEYMASTER_CERTIFICATE), exchange: Securite::L1Public },
             ],
             ttl: Some(QUEUE_TTL_DEFAULT),
             durable: true,
