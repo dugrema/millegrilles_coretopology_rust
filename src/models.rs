@@ -541,7 +541,7 @@ pub struct ConfigurationPropertyDecrypted {
     pub key: String,
     /// Encrypted values
     pub value: ConfigurationValue,
-    #[serde(with="FromChrono04DateTime")]
+    #[serde(with="ts_milliseconds")]
     pub last_modified: DateTime<Utc>,
 }
 
