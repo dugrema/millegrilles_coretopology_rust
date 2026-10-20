@@ -1,8 +1,9 @@
 use crate::constants::*;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
-use millegrilles_common_rust::rabbitmq_dao::{ConfigQueue, ConfigRoutingExchange};
+use millegrilles_common_rust::rabbitmq_dao::ConfigRoutingExchange;
 use millegrilles_common_rust::v3::impls::messaging_service::MessagingServiceImpl;
+use millegrilles_common_rust::v3::models::ConfigQueueV3;
 
 pub const QUEUE_TTL_DEFAULT: u32 = 30_000;
 pub const QUEUE_TTL_FILEHOSTS: u32 = 30 * 60_000;
@@ -86,8 +87,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
 
     // System service level queues: ticker (maintenance) and backup
     mq.add_named_queue(
-        ConfigQueue {
-            nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_TICKER),
+        ConfigQueueV3 {
+            queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_TICKER)),
             routing_keys: vec![
                 ConfigRoutingExchange { routing_key: "evenement.ceduleur.ping".to_string(), exchange: Securite::L1Public }
             ],
@@ -96,8 +97,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
             autodelete: true,
         })?;
 
-    mq.add_named_queue(ConfigQueue {
-        nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_BACKUP),
+    mq.add_named_queue(ConfigQueueV3 {
+        queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_BACKUP)),
         routing_keys: vec![
             ConfigRoutingExchange { routing_key: format!("requete.{}.getNombreTransactions", DOMAIN_NAME), exchange: Securite::L2Prive },
             ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_DECLENCHER_BACKUP), exchange: Securite::L3Protege },
@@ -109,8 +110,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
 
     // Domain specific queues
     mq.add_named_queue(
-        ConfigQueue {
-            nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_REQUESTS),
+        ConfigQueueV3 {
+            queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_REQUESTS)),
             routing_keys: vec![
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_DOMAIN_LIST), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("requete.{}.{}", DOMAIN_NAME, REQUEST_SERVER_INSTANCES_V2), exchange: Securite::L3Protege },
@@ -137,8 +138,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
         })?;
 
     mq.add_named_queue(
-        ConfigQueue {
-            nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_VOLATILES),
+        ConfigQueueV3 {
+            queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_VOLATILES)),
             routing_keys: vec![
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_SET_CLEID_BACKUP_DOMAINE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_CLAIM_AND_FILEHOST_VISITS_FOR_FUUIDS), exchange: Securite::L3Protege },
@@ -156,8 +157,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
         })?;
 
     mq.add_named_queue(
-        ConfigQueue {
-            nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_PRESENCE),
+        ConfigQueueV3 {
+            queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_PRESENCE)),
             routing_keys: vec![
                 // Domain status
                 ConfigRoutingExchange { routing_key: format!("evenement.*.{}", EVENEMENT_PRESENCE_DOMAINE), exchange: Securite::L3Protege },
@@ -180,8 +181,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
         })?;
 
     mq.add_named_queue(
-        ConfigQueue {
-            nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_FILEHOSTS_BATCH),
+        ConfigQueueV3 {
+            queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_FILEHOSTS_BATCH)),
             routing_keys: vec![
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_FILE_VISIT), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_FILEHOST_BATCH_TRANSFERS), exchange: Securite::L1Public },
@@ -192,8 +193,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
         })?;
 
     mq.add_named_queue(
-        ConfigQueue {
-            nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_FILECONTROLER_EVENTS),
+        ConfigQueueV3 {
+            queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_FILECONTROLER_EVENTS)),
             routing_keys: vec![
                 ConfigRoutingExchange { routing_key: format!("evenement.filecontroler.{}", EVENEMENT_FILEHOST_USAGE), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("evenement.filecontroler.{}", EVENEMENT_FILEHOST_NEWFUUID), exchange: Securite::L1Public },
@@ -204,8 +205,8 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
         })?;
 
     mq.add_named_queue(
-        ConfigQueue {
-            nom_queue: format!("{}/{}", DOMAIN_NAME, QUEUE_TRANSACTIONS),
+        ConfigQueueV3 {
+            queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_TRANSACTIONS)),
             routing_keys: vec![
                 // 3.protege
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_SET_FILEHOST_FOR_INSTANCE), exchange: Securite::L3Protege },
