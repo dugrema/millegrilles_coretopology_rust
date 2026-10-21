@@ -150,6 +150,7 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
 
                 // Events
                 ConfigRoutingExchange { routing_key: format!("evenement.{}.{}", DOMAIN_KEYMASTER, EVENT_KEYMASTER_CERTIFICATE), exchange: Securite::L1Public },
+                ConfigRoutingExchange { routing_key: format!("evenement.*.{}", BACKUP_EVENEMENT_MAJ), exchange: Securite::L1Public },
             ],
             ttl: Some(QUEUE_TTL_DEFAULT),
             durable: true,

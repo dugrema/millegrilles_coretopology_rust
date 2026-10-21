@@ -2781,7 +2781,7 @@ dependencies = [
 
 [[package]]
 name = "millegrilles_coretopology_rust"
-version = "2026.6.1"
+version = "2026.7.1"
 dependencies = [
  "clap",
  "clap_derive",

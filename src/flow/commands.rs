@@ -11,7 +11,7 @@ use millegrilles_common_rust::chrono::{DateTime, Duration, Utc};
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::{Error as CommonError, Error};
 use millegrilles_common_rust::generateur_messages::RoutageMessageAction;
-use millegrilles_common_rust::mongo_dao::MongoDaoTyped;
+use millegrilles_common_rust::mongo_dao::{MongoDao, MongoDaoTyped};
 use millegrilles_common_rust::mongodb::Cursor;
 use millegrilles_common_rust::serde::{Deserialize, Serialize};
 use millegrilles_common_rust::{bson, serde_json};
@@ -59,6 +59,7 @@ pub async fn process_command<M>(
         MessageKind::Evenement => {
             match action {
                 EVENT_KEYMASTER_CERTIFICATE => save_keymaster_certificate(chiffrage, wrapper).await,
+                BACKUP_EVENEMENT_MAJ => backup_update_event(mongo, wrapper).await,
                 _ => {
                     info!("Unknown event action {} in process_command, skipping", action);
                     Ok(())
@@ -1191,5 +1192,45 @@ async fn save_keymaster_certificate(
     if let Err(e) = chiffrage.add_encryption_publickey(wrapper.certificate) {
         warn!("Error saving keymaster certificate: {:?}", e);
     }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct BackupEvent {
+    ok: bool,  // Si false, indique echec dans le backup
+    done: bool,
+    domaine: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    err: Option<String>,
+    version: Option<String>,
+}
+
+async fn backup_update_event(
+    mongo: &dyn MongoDao,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> {
+    let event: BackupEvent = wrapper.message.deserialize()?;
+    debug!("backup_update_event Domain {} version {:?}", event.domaine, event.version);
+
+    let domaine = event.domaine.as_str();
+
+    if !wrapper.certificate.verifier_domaines(vec![domaine.to_owned()])? {
+        debug!("backup_update_event Wrong domain for event - DROPPED");
+        return Ok(())
+    }
+
+    if event.ok && event.done {
+        if let Some(version) = event.version {
+            // Backup complete et on a une version - conserver pour le domaine
+            let filtre = doc!{"domaine": domaine};
+            let ops = doc!{
+                "$set": {"backup_version": &version},
+                "$currentDate": {CHAMP_MODIFICATION: true},
+            };
+            let collection = mongo.get_collection(COLLECTION_DOMAINS)?;
+            collection.update_one(filtre, ops).await?;
+        }
+    }
+
     Ok(())
 }
