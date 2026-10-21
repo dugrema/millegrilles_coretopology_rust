@@ -1,6 +1,8 @@
+use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::constantes::*;
 use millegrilles_common_rust::error::Error as CommonError;
 use millegrilles_common_rust::mongo_dao::{ChampIndex, IndexOptions, MongoDao};
+use millegrilles_common_rust::mongodb::results::UpdateResult;
 
 pub const COLLECTION_NAME_REDOLOG: &str = "CoreTopology/redolog";
 pub const COLLECTION_NAME_TRACKING: &str = "CoreTopology/tracking";
@@ -30,6 +32,10 @@ pub const FIELD_CONFIGURATION_FILEHOST_DEFAULT: &str = "filehost.default";
 pub const FIELD_CONFIGURATION_FILECONTROLER_PRIMARY: &str = "filecontroler.primary";
 pub const FIELD_LAST_CLAIM_DATE: &str = "last_claim_date";
 pub const FIELD_JOB_PICKED_UP: &str = "job_picked_up";
+
+pub const FIELD_DOMAIN: &str = "domaine";
+pub const FIELD_DATE_MODIFIED: &str = "modified";
+pub const FIELD_BACKUP_VERSION: &str = "backup_version";
 
 pub async fn create_index_mongodb(db: &dyn MongoDao) -> Result<(), CommonError> {
     db.create_index(
@@ -194,4 +200,15 @@ pub async fn create_index_mongodb(db: &dyn MongoDao) -> Result<(), CommonError> 
     ).await?;
 
     Ok(())
+}
+
+pub async fn set_backup_version(mongo: &dyn MongoDao, domain: &str, version: &str) -> Result<UpdateResult, CommonError> {
+    // Backup complete et on a une version - conserver pour le domaine
+    let filtre = doc!{ FIELD_DOMAIN: domain };
+    let ops = doc!{
+                "$set": { FIELD_BACKUP_VERSION: &version },
+                "$currentDate": { FIELD_DATE_MODIFIED: true },
+            };
+    let collection = mongo.get_collection(COLLECTION_DOMAINS)?;
+    Ok(collection.update_one(filtre, ops).await?)
 }

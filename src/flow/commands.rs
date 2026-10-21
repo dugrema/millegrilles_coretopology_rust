@@ -295,13 +295,8 @@ async fn set_domain_backup_version<M>(
     }
 
     let command: CommandSetDomainBackupVersion = wrapper.message.deserialize()?;
-    let collection = mongo.get_collection(COLLECTION_DOMAINS)?;
-    let filtre = doc!{"domaine": &command.domaine};
-    let ops = doc! {
-        "$set": {"backup_version": &command.version},
-        "$currentDate": {"modified": true},
-    };
-    let result = collection.update_one(filtre, ops).await?;
+
+    let result = set_backup_version(mongo, command.domaine.as_str(), command.version.as_str()).await?;
 
     if result.matched_count == 1 {
         // Emettre evenement de mise a jour de backup.
@@ -1212,23 +1207,16 @@ async fn backup_update_event(
     let event: BackupEvent = wrapper.message.deserialize()?;
     debug!("backup_update_event Domain {} version {:?}", event.domaine, event.version);
 
-    let domaine = event.domaine.as_str();
+    let domain = event.domaine.as_str();
 
-    if !wrapper.certificate.verifier_domaines(vec![domaine.to_owned()])? {
+    if !wrapper.certificate.verifier_domaines(vec![domain.to_owned()])? {
         debug!("backup_update_event Wrong domain for event - DROPPED");
         return Ok(())
     }
 
     if event.ok && event.done {
         if let Some(version) = event.version {
-            // Backup complete et on a une version - conserver pour le domaine
-            let filtre = doc!{"domaine": domaine};
-            let ops = doc!{
-                "$set": {"backup_version": &version},
-                "$currentDate": {CHAMP_MODIFICATION: true},
-            };
-            let collection = mongo.get_collection(COLLECTION_DOMAINS)?;
-            collection.update_one(filtre, ops).await?;
+            set_backup_version(mongo, domain, version.as_str()).await?;
         }
     }
 
