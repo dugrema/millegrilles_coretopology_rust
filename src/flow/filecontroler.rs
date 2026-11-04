@@ -297,8 +297,8 @@ pub async fn entretien_transfert_fichiers<M>(
             {"$or": [
                 {"last_visit.0": {"$exists": true}},
                 // Keep files with expired or missing claim field - the transfer must not happen
-                {"last_claim_date": null},
-                {"last_claim_date": {"$lte": claim_expiration}},
+                {FIELD_LAST_CLAIM_DATE: null},
+                {FIELD_LAST_CLAIM_DATE: {"$lte": claim_expiration}},
             ]}
         },
 
@@ -344,7 +344,7 @@ pub async fn entretien_transfert_fichiers<M>(
         // Filter out entries without a recent claim or that don't exist anywhere
         // Only rely on filehosts with recent visits on the file.
         let match_filehosts = doc!{
-            "last_claim_date": {"$gte": claim_expiration},
+            FIELD_LAST_CLAIM_DATE: {"$gte": claim_expiration},
             "$or": filehost_list,
         };
 
@@ -536,7 +536,7 @@ async fn merge_filehosting_fuuids_claims<M>(
     // Merge claims into the filehosting fuuids table
     let claim_pipeline = vec![
         doc!{"$sort": {"fuuid": 1}},
-        doc!{"$group": {"_id": "$fuuid", "last_claim_date": {"$max": "$claim_date"}}},
+        doc!{"$group": {"_id": "$fuuid", FIELD_LAST_CLAIM_DATE: {"$max": "$claim_date"}}},
         doc!{"$set": {"fuuid": "$_id"}},  // Copy field claim_date to last_claim_date (merge value)
         doc!{"$unset": ["_id"]},          // Remove _id field for merge
         doc!{"$merge": {
@@ -792,26 +792,26 @@ pub async fn maintain_unclaimed_fuuids<M>(
     let claim_expired = now - Duration::days(7);
     let filtre = doc!{
         "$or": [
-            {"last_claim_date": null},
-            {"last_claim_date": {"$lt": &claim_expired}},
+            {FIELD_LAST_CLAIM_DATE: null},
+            {FIELD_LAST_CLAIM_DATE: {"$lt": &claim_expired}},
         ],
-        "unclaim_check": null,
+        FIELD_UNCLAIM_CHECK_DATE: null,
     };
-    let ops = doc!{ "$currentDate": {"unclaim_check": true} };
+    let ops = doc!{ "$currentDate": {FIELD_UNCLAIM_CHECK_DATE: true} };
     collection_fuuids.update_many(filtre, ops).await?;
 
     // Unset the unclaim_check for claims that are current
     let filtre = doc!{
-        "last_claim_date": {"$gte": &claim_expired},
-        "unclaim_check": {"$exists": true},
+        FIELD_LAST_CLAIM_DATE: {"$gte": &claim_expired},
+        FIELD_UNCLAIM_CHECK_DATE: {"$exists": true},
     };
-    let ops = doc!{ "$unset": {"unclaim_check": true} };
+    let ops = doc!{ "$unset": {FIELD_UNCLAIM_CHECK_DATE: true} };
     collection_fuuids.update_many(filtre, ops).await?;
 
     // Identify unclaim_check that are old enough to get triggered
     let unclaim_ready = now - Duration::days(21);
     // let unclaim_ready = now - Duration::from_secs(120);
-    let filtre = doc!{"unclaim_check": {"$lt": &unclaim_ready}};
+    let filtre = doc!{FIELD_UNCLAIM_CHECK_DATE: {"$lt": &unclaim_ready}};
     let mut cursor = collection_fuuids.find(filtre.clone()).await?;
     while cursor.advance().await? {
         let row = match cursor.deserialize_current() {

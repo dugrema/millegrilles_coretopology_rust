@@ -31,6 +31,7 @@ pub const CHAMP_INSTANCE_ID: &str = "instance_id";
 pub const FIELD_CONFIGURATION_FILEHOST_DEFAULT: &str = "filehost.default";
 pub const FIELD_CONFIGURATION_FILECONTROLER_PRIMARY: &str = "filecontroler.primary";
 pub const FIELD_LAST_CLAIM_DATE: &str = "last_claim_date";
+pub const FIELD_UNCLAIM_CHECK_DATE: &str = "unclaim_check";
 pub const FIELD_JOB_PICKED_UP: &str = "job_picked_up";
 
 pub const FIELD_DOMAIN: &str = "domaine";
