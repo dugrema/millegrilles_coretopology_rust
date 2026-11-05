@@ -12,7 +12,7 @@ use millegrilles_common_rust::bson;
 use millegrilles_common_rust::bson::doc;
 use millegrilles_common_rust::certificats::VerificateurPermissions;
 use millegrilles_common_rust::chrono::Utc;
-use millegrilles_common_rust::constantes::{Securite, CHAMP_MODIFICATION};
+use millegrilles_common_rust::constantes::Securite;
 use millegrilles_common_rust::mongodb::options::{DeleteManyModel, DeleteOneModel, UpdateOneModel, WriteModel};
 use millegrilles_common_rust::tracing::warn;
 use crate::external::mq::*;
@@ -63,7 +63,6 @@ impl TransactionRouter for TopologyTransactionRouter {
         wrapper: TransactionWrapper
     ) -> Result<TransactionOperationAggregator, CommonError> {
         match action.as_str() {
-            TRANSACTION_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_DEFAULT => set_filehost_default(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_DELETE_DOMAIN => delete_domain(self.mongo.as_ref(), wrapper).await,
             TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(self.mongo.as_ref(), wrapper).await,
@@ -80,45 +79,46 @@ impl TransactionRouter for TopologyTransactionRouter {
             TRANSACTION_FILEHOST_ADD => add_filehost(self.mongo.as_ref(), wrapper).await,
 
             // Obsolete and unsupported
-            TRANSACTION_CONFIGURER_CONSIGNATION => obsolete(TRANSACTION_CONFIGURER_CONSIGNATION),
-            TRANSACTION_SET_FICHIERS_PRIMAIRE => obsolete(TRANSACTION_SET_FICHIERS_PRIMAIRE),
-            TRANSACTION_MONITOR => obsolete(TRANSACTION_MONITOR),
-            TRANSACTION_SUPPRIMER_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_INSTANCE),
-            TRANSACTION_SET_CONSIGNATION_INSTANCE => obsolete(TRANSACTION_SET_CONSIGNATION_INSTANCE),
-            TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE => obsolete(TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE),
+            TRANSACTION_CONFIGURER_CONSIGNATION => obsolete(action.as_str()),
+            TRANSACTION_SET_FICHIERS_PRIMAIRE => obsolete(action.as_str()),
+            TRANSACTION_MONITOR => obsolete(action.as_str()),
+            TRANSACTION_SET_CONSIGNATION_INSTANCE => obsolete(action.as_str()),
+            TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE => obsolete(action.as_str()),
+            COMMAND_DELETE_INSTANCE => obsolete(action.as_str()),   // Note: this is still a command, instances are volatile
+            COMMAND_SET_FILEHOST_FOR_INSTANCE => obsolete(action.as_str()),  // set_filehost_for_instance(self.mongo.as_ref(), wrapper).await,
 
             _ => Err(CommonError::Str("Unknown transaction action"))
         }
     }
 }
 
-async fn set_filehost_for_instance(
-    mongo: &dyn MongoDao,
-    wrapper: TransactionWrapper,
-) -> Result<TransactionOperationAggregator, CommonError> {
-    let transaction_value: TransactionSetFilehostInstance = wrapper.message.deserialize()?;
-
-    let filter = doc! { CHAMP_INSTANCE_ID: &transaction_value.instance_id, "name": "filehost_id" };
-    let set_ops = doc! {"value": transaction_value.filehost_id.as_ref()};
-    let ops = doc! {
-        "$set": set_ops,
-        "$currentDate": {CHAMP_MODIFICATION: true}
-    };
-    let collection = mongo.get_collection(COLLECTION_INSTANCE_CONFIGURATION)?;
-
-    let update_model_versions = WriteModel::UpdateOne(
-        UpdateOneModel::builder()
-            .upsert(true)
-            .namespace(collection.namespace())
-            .filter(filter)
-            .update(ops)
-            .build()
-    );
-    let mut aggregator = TransactionOperationAggregator::new();
-    aggregator.ordered = Some(vec![update_model_versions]);
-
-    Ok(aggregator)
-}
+// async fn set_filehost_for_instance(
+//     mongo: &dyn MongoDao,
+//     wrapper: TransactionWrapper,
+// ) -> Result<TransactionOperationAggregator, CommonError> {
+//     let transaction_value: TransactionSetFilehostInstance = wrapper.message.deserialize()?;
+//
+//     let filter = doc! { CHAMP_INSTANCE_ID: &transaction_value.instance_id, "name": "filehost_id" };
+//     let set_ops = doc! {"value": transaction_value.filehost_id.as_ref()};
+//     let ops = doc! {
+//         "$set": set_ops,
+//         "$currentDate": {CHAMP_MODIFICATION: true}
+//     };
+//     let collection = mongo.get_collection(COLLECTION_INSTANCE_CONFIGURATION)?;
+//
+//     let update_model_versions = WriteModel::UpdateOne(
+//         UpdateOneModel::builder()
+//             .upsert(true)
+//             .namespace(collection.namespace())
+//             .filter(filter)
+//             .update(ops)
+//             .build()
+//     );
+//     let mut aggregator = TransactionOperationAggregator::new();
+//     aggregator.ordered = Some(vec![update_model_versions]);
+//
+//     Ok(aggregator)
+// }
 
 fn obsolete(name: &str) -> Result<TransactionOperationAggregator,CommonError> {
     warn!("Obsolete transaction received: {}", name);

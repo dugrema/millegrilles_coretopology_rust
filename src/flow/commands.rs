@@ -1,4 +1,4 @@
-use crate::constants::DOMAIN_NAME;
+use crate::constants::{DOMAIN_NAME, EVENEMENT_INSTANCE_SUPPRIMEE};
 use crate::external::mongo::*;
 use crate::external::mq::*;
 use crate::flow::filecontroler::{add_missing_file_transfers, check_primary_filecontroler, entretien_transfert_fichiers};
@@ -39,9 +39,11 @@ pub async fn process_command<M>(
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in command")).await
     };
 
-    match wrapper.message.kind {
+    let delivery_info = wrapper.delivery_info.clone();
+    let result = match wrapper.message.kind {
         MessageKind::Commande => {
             match action {
+                COMMAND_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(mongo, outbound, wrapper).await,
                 COMMANDE_SET_CLEID_BACKUP_DOMAINE => set_domain_backup_keyid(mongo, outbound, wrapper).await,
                 COMMANDE_CLAIM_AND_FILEHOST_VISITS_FOR_FUUIDS => claim_filehost_visits_for_fuuids(mongo, outbound, wrapper).await,
                 COMMANDE_FILEHOST_RESET_VISITS_CLAIMS => filehost_reset_visits_claims(mongo, outbound, wrapper).await,
@@ -50,6 +52,7 @@ pub async fn process_command<M>(
                 COMMAND_DOMAIN_CLAIM_FILES => domain_claim_files(mongo, outbound, wrapper).await,
                 COMMANDE_FILE_VISIT => file_visit(mongo, outbound, wrapper).await,
                 COMMANDE_FILEHOST_BATCH_TRANSFERS => filehost_batch_transfers(mongo, outbound, wrapper).await,
+                COMMAND_DELETE_INSTANCE => delete_instance(mongo, outbound, wrapper).await,
                 _ => {
                     info!("Unknown command action {} in process_command, skipping", action);
                     Ok(())
@@ -70,8 +73,13 @@ pub async fn process_command<M>(
             info!("Unhandled message type in volatile handler, action {}, skipping", action);
             Ok(())
         }
+    };
+
+    if result.is_err() {
+        outbound.respond(delivery_info, ErrorMessage::err_code(500, "Server error")).await.ok();
     }
 
+    result
 }
 
 #[derive(Deserialize)]
@@ -531,7 +539,6 @@ pub async fn process_transaction<M>(
         None => return outbound.respond(wrapper.delivery_info, ErrorMessage::err("No action provided in transaction")).await
     };
     match action {
-        TRANSACTION_SET_FILEHOST_FOR_INSTANCE => set_filehost_for_instance(outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_DEFAULT => set_filehost_default(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_DELETE_DOMAIN => delete_domain(mongo, outbound, transaction, wrapper).await,
         TRANSACTION_FILEHOST_ADD_V2 => add_filehost_v2(mongo, outbound, transaction, wrapper).await,
@@ -550,8 +557,8 @@ pub async fn process_transaction<M>(
 }
 
 async fn set_filehost_for_instance(
+    mongo: &dyn MongoDao,
     outbound: &MessageOutboundFacade,
-    transaction: &TopologyTransactionService,
     wrapper: MessageValidated,
 ) -> Result<(), CommonError> {
     // Verifier autorisation
@@ -560,13 +567,25 @@ async fn set_filehost_for_instance(
     }
 
     // Validate command structure
-    let _transaction_value: TransactionSetFilehostInstance = wrapper.message.deserialize()?;
+    let transaction_value: TransactionSetFilehostInstance = wrapper.message.deserialize()?;
 
     // Process transaction
     let delivery_info = wrapper.delivery_info.clone();
-    if let Err(e) = transaction.process_transaction(wrapper.into(), None).await {
-        error!("Error processing transaction {:?}", e);
-        return outbound.respond(delivery_info, ErrorMessage::err_code(500, "Error processing transaction")).await
+
+    let filter = doc! { CHAMP_INSTANCE_ID: &transaction_value.instance_id, "name": "filehost_id" };
+    let set_ops = doc! {"value": transaction_value.filehost_id.as_ref()};
+    let ops = doc! {
+        "$set": set_ops,
+        "$currentDate": {CHAMP_MODIFICATION: true}
+    };
+    let collection = mongo.get_collection(COLLECTION_INSTANCE_CONFIGURATION)?;
+    let result = collection
+        .update_one(filter, ops)
+        .upsert(true)
+        .await?;
+    if result.matched_count == 0 && result.upserted_id.is_none() {
+        warn!("set_filehost_for_instance No entry updated/upserted for instance_id:{}", transaction_value.instance_id);
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(500, "Server error")).await
     }
 
     // Emit filehost update event
@@ -1221,4 +1240,44 @@ async fn backup_update_event(
     }
 
     Ok(())
+}
+
+#[derive(Serialize)]
+struct DeleteInstanceEvent<'a> {
+    instance_id: &'a str,
+}
+
+
+#[derive(Deserialize)]
+struct CommandDeleteInstance {
+    instance_id: String
+}
+
+async fn delete_instance(
+    mongo: &dyn MongoDao,
+    outbound: &MessageOutboundFacade,
+    wrapper: MessageValidated,
+) -> Result<(), CommonError> {
+    let command: CommandDeleteInstance = wrapper.message.deserialize()?;
+
+    if ! wrapper.certificate.verifier_delegation_globale(DELEGATION_GLOBALE_PROPRIETAIRE)? {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
+    }
+
+    // Delete the instance. Return error if nothing was deleted.
+    let collection = mongo.get_collection(COLLECTION_INSTANCE_STATUS_V2)?;
+    let filter = doc! { "instance_id": &command.instance_id };
+    let result = collection.delete_one(filter).await?;
+    if result.deleted_count == 0 {
+        return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "Unknown instance")).await
+    }
+
+    let event = DeleteInstanceEvent { instance_id: &command.instance_id };
+    let routage = RoutageMessageAction::builder(DOMAIN_NAME, EVENEMENT_INSTANCE_SUPPRIMEE, vec![Securite::L3Protege])
+        .build();
+    if let Err(e) = outbound.emit_event(routage, event).await {
+        warn!("delete_instance Error emitting event: {:?}", e);
+    }
+
+    outbound.respond(wrapper.delivery_info, ErrorMessage::ok()).await
 }

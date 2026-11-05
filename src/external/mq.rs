@@ -45,10 +45,10 @@ pub const COMMANDE_BACKUP_SET_DOMAIN_VERSION: &str = "setBackupDomainVersion";
 
 pub const TRANSACTION_INSTANCE: &str = "instance";
 pub const TRANSACTION_MONITOR: &str = TRANSACTION_INSTANCE;
-pub const TRANSACTION_SUPPRIMER_INSTANCE: &str = "supprimerInstance";
+pub const COMMAND_DELETE_INSTANCE: &str = "supprimerInstance";
 pub const TRANSACTION_SET_FICHIERS_PRIMAIRE: &str = "setFichiersPrimaire";
 pub const TRANSACTION_CONFIGURER_CONSIGNATION: &str = "configurerConsignation";
-pub const TRANSACTION_SET_FILEHOST_FOR_INSTANCE: &str = "setFilehostForInstance";
+pub const COMMAND_SET_FILEHOST_FOR_INSTANCE: &str = "setFilehostForInstance";
 pub const TRANSACTION_SET_CONSIGNATION_INSTANCE: &str = "setConsignationInstance";
 pub const TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE: &str = "supprimerConsignation";
 pub const TRANSACTION_FILEHOST_ADD: &str = "filehostAdd";
@@ -147,7 +147,9 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_FILEHOST_RESET_TRANSFERS), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMANDE_BACKUP_SET_DOMAIN_VERSION), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMAND_DOMAIN_CLAIM_FILES), exchange: Securite::L3Protege },
-
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMAND_DELETE_INSTANCE), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMAND_SET_FILEHOST_FOR_INSTANCE), exchange: Securite::L3Protege },
+                
                 // Events
                 ConfigRoutingExchange { routing_key: format!("evenement.{}.{}", DOMAIN_KEYMASTER, EVENT_KEYMASTER_CERTIFICATE), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("evenement.*.{}", BACKUP_EVENEMENT_MAJ), exchange: Securite::L1Public },
@@ -210,7 +212,6 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
             queue_name: Some(format!("{}/{}", DOMAIN_NAME, QUEUE_TRANSACTIONS)),
             routing_keys: vec![
                 // 3.protege
-                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_SET_FILEHOST_FOR_INSTANCE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_FILEHOST_DEFAULT), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_DELETE_DOMAIN), exchange: Securite::L3Protege },
 
@@ -226,11 +227,12 @@ pub fn init_queues(mq: &MessagingServiceImpl) -> Result<(), CommonError> {
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_FILEHOST_DELETE), exchange: Securite::L1Public },
 
                 // Obsolete
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMAND_SET_FILEHOST_FOR_INSTANCE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_FILEHOST_ADD), exchange: Securite::L1Public },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_CONFIGURER_CONSIGNATION), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_SET_FICHIERS_PRIMAIRE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_MONITOR), exchange: Securite::L3Protege },
-                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_SUPPRIMER_INSTANCE), exchange: Securite::L3Protege },
+                ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, COMMAND_DELETE_INSTANCE), exchange: Securite::L3Protege },
                 ConfigRoutingExchange { routing_key: format!("commande.{}.{}", DOMAIN_NAME, TRANSACTION_SUPPRIMER_CONSIGNATION_INSTANCE), exchange: Securite::L3Protege },
             ],
             ttl: Some(QUEUE_TTL_DEFAULT),
