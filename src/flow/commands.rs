@@ -1264,13 +1264,22 @@ async fn delete_instance(
         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(401, "Access denied")).await
     }
 
-    // Delete the instance. Return error if nothing was deleted.
-    let collection = mongo.get_collection(COLLECTION_INSTANCE_STATUS_V2)?;
     let filter = doc! { "instance_id": &command.instance_id };
-    let result = collection.delete_one(filter).await?;
+
+    // Delete configuration and associated applications first
+    let collection_configuration = mongo.get_collection(COLLECTION_INSTANCE_CONFIGURATION)?;
+    collection_configuration.delete_many(filter.clone()).await.ok();
+    let collection_applications = mongo.get_collection(COLLECTION_CONFIGURED_APPLICATIONS_V2)?;
+    collection_applications.delete_many(filter.clone()).await.ok();
+
+    // Delete the instance. Return error if nothing was deleted.
+    let collection_status = mongo.get_collection(COLLECTION_INSTANCE_STATUS_V2)?;
+    let result = collection_status.delete_one(filter).await?;
     if result.deleted_count == 0 {
         return outbound.respond(wrapper.delivery_info, ErrorMessage::err_code(404, "Unknown instance")).await
     }
+
+
 
     let event = DeleteInstanceEvent { instance_id: &command.instance_id };
     let routage = RoutageMessageAction::builder(DOMAIN_NAME, EVENEMENT_INSTANCE_SUPPRIMEE, vec![Securite::L3Protege])

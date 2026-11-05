@@ -83,8 +83,6 @@ pub async fn create_index_mongodb(db: &dyn MongoDao) -> Result<(), CommonError> 
         })
     ).await?;
 
-    // TDOD Collection indices
-
     db.create_index(
         COLLECTION_INSTANCE_STATUS_V2,
         vec!(
@@ -101,6 +99,17 @@ pub async fn create_index_mongodb(db: &dyn MongoDao) -> Result<(), CommonError> 
         vec!(
             ChampIndex { nom_champ: String::from("instance_id"), direction: 1 },
             ChampIndex { nom_champ: String::from("name"), direction: 1 },
+        ),
+        Some(IndexOptions {
+            nom_index: Some(String::from("unique_id")),
+            unique: true,
+        })
+    ).await?;
+
+    db.create_index(
+        COLLECTION_CONFIGURED_APPLICATIONS_V2,
+        vec!(
+            ChampIndex { nom_champ: String::from("instance_id"), direction: 1 },
         ),
         Some(IndexOptions {
             nom_index: Some(String::from("unique_id")),
